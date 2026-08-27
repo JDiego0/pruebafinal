@@ -88,6 +88,9 @@ _(Phase 4 complete — every endpoint exercised live against a real database wit
 | 5.6 | Edit + logical delete | MSG-01, MSG-02 |
 | 5.7 | Read cursor | — |
 | 5.8 | OpenAPI generation | API-08 |
+| 5.9 | Owner/moderator invites a member to a PRIVATE channel (`rw_fn_add_channel_member`, V13) — found missing while implementing `POST /channels/{id}/members`, no self-join path could ever reach a PRIVATE channel | — |
+
+_(Phase 5 complete — all 17 endpoints exercised live against a real database with real curl requests across 6 seeded users, not just compiled. Three real bugs found and fixed; see PROGRESS.md.)_
 
 ## PHASE 6 — Realtime  *(Sonnet)*
 | # | Task | Covers |

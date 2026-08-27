@@ -3,7 +3,7 @@
 Living state of the project. Updated at the end of every phase.
 Plan: `docs/BACKLOG.md` · Acceptance: `REQUIREMENTS.md` · Rationale: `DECISIONS.md`
 
-**Current phase:** 4 — complete. Beginning Phase 5 (messaging REST API).
+**Current phase:** 5 — complete. Beginning Phase 6 (realtime).
 **Last updated:** 2026-08-27
 
 > **Amendment (2026-08-27).** MVP chat provider is **Groq**, not xAI/Grok. Groq is OpenAI-compatible, so the adapter is unchanged — but Groq publishes **no embedding models**, so chat and embeddings are now configured as two independent providers. Recorded as `DECISIONS.md` D-21 and requirement `AI-16`. No change to the schema, the RLS model, the retrieval order or any security property.
@@ -19,7 +19,7 @@ Plan: `docs/BACKLOG.md` · Acceptance: `REQUIREMENTS.md` · Rationale: `DECISION
 | 2 | PostgreSQL schema | ✅ done | 20 tables, migrations verified against a live pgvector/pg16 container |
 | 3 | Functions, procedures, views, triggers, RLS | ✅ done | 6 migration files, verified live as rw_app; 3 real bugs found and fixed |
 | 4 | Authentication | ✅ done | full backend skeleton, auth + users endpoints verified live end-to-end |
-| 5 | Messaging REST API | ⏸ not started | |
+| 5 | Messaging REST API | ✅ done | 17 endpoints, all verified live across 6 users |
 | 6 | Realtime (SSE + LISTEN/NOTIFY) | ⏸ not started | |
 | 7 | Search | ⏸ not started | |
 | 8 | Frontend | ⏸ not started | |
@@ -285,6 +285,95 @@ convention (documented first when `V10` was created for the logout gap).
 
 ---
 
+## Delivered in Phase 5
+
+```
+domain/model/     ChannelType, ChannelMemberRole, ChannelSlug (validates like
+                   the other value objects), ConversationSummary, ChannelDetail,
+                   ChannelMemberSummary, MessageRecord
+domain/port/      ConversationRepository, ChannelRepository, ChannelMembershipPort,
+                   MessageRepository — 4 new ports, all SQL-function-shaped
+application/      11 new use cases: ListConversations, DiscoverChannels,
+                   CreateChannel, OpenDirectChannel, GetChannel, UpdateChannel,
+                   ListChannelMembers, JoinChannel, AddChannelMember, LeaveChannel,
+                   RemoveChannelMember, UpdateReadCursor, GetMessageHistory,
+                   SendMessage, EditMessage, DeleteMessage
+infrastructure/   4 new JDBC adapters, MessageCursor (opaque base64url keyset
+                   encoding, API-07/MSG-04 — no OFFSET anywhere)
+presentation/     ConversationsController, ChannelsController, MessagesController
+                   — 17 endpoints total, matching docs/API.md exactly
+database/         V13 (owner/moderator channel invite — a gap, see below),
+                   V14 (DIRECT-channel guard scope fix, see below)
+```
+
+**Every one of the 17 endpoints exercised live** against a real database
+through 6 concurrently logged-in seeded users (ana, bruno, hugo, carla,
+frank, grace) — not just compiled, and not just the security-critical paths:
+
+- `GET /conversations`, `GET /channels?query=`, `GET/PATCH /channels/{id}`
+- `POST /channels` (PRIVATE, creator seated as OWNER atomically), `POST
+  /channels/direct` (idempotent — reopening an existing DM returns the same
+  channel with 200, not a duplicate with 201)
+- `GET /channels/{id}/members`, `POST /channels/{id}/members` (both self-join
+  to PUBLIC and owner-invites-to-PRIVATE), `DELETE .../members/{userId}`
+  (both self-leave and owner-removes-someone-else), `PUT .../read-cursor`
+- `GET/POST /channels/{id}/messages`, `PATCH/DELETE /messages/{id}`
+- **The core security guarantee, proven live and repeatedly**: bruno (not a
+  member of `incident-response`) gets 404 reading its history, 404 reading
+  the channel itself, and 404 attempting to post to it — three independent
+  confirmations that a non-member cannot reach a private channel through any
+  of these paths, each indistinguishable from "does not exist" (SEC-14)
+- Idempotent send: identical `clientMessageId` retried → 200 with the same
+  message, not a duplicate; edit bumps the revision; a different user
+  editing someone else's message → 404, not 403 (SEC-14 again: "not yours"
+  and "does not exist" are the same shape); soft-delete produces a real
+  tombstone (`isDeleted: true`, `body` absent) with the row intact
+- `POST /channels` → invited-only visibility (a non-invited user gets 404
+  on a PRIVATE channel until the owner adds them, then 200); a non-owner
+  attempting to invite someone → 403; BR-10 (sole owner cannot leave) → 409;
+  archiving a channel then posting to it → 403
+- `GET /api/v1/openapi.json` — all 17 paths present, springdoc auto-generated
+
+**Three real bugs found only by exercising the full stack, fixed and
+re-verified live**:
+
+1. **The owner/moderator channel-invite path did not exist at all.** V8's
+   RLS only ever allowed a self-join `INSERT` to a `PUBLIC` channel — there
+   was no way for anyone to add someone else to a `PRIVATE` channel, which
+   is not a security gap but a genuine missing feature (a private channel
+   with only its creator is not usable). Added `rw_fn_add_channel_member`
+   (V13, `SECURITY DEFINER`, re-checks `OWNER`/`MODERATOR` internally, same
+   pattern as `rw_fn_remove_channel_member`) plus the corresponding port,
+   use case, and request DTO.
+2. **`UpdateChannelUseCase` originally let a non-owner's `PATCH` silently
+   no-op** (RLS just affects zero rows) instead of returning 403. Since the
+   actor can already see the channel they're a member of, D-14 says this is
+   exactly the case 403 is for — fixed by checking the affected-row count
+   and distinguishing it from "not visible at all" (404), which the initial
+   read already covers.
+3. **The `DIRECT`-channel guard trigger blocked every `UPDATE`, not just
+   role changes.** `PUT /channels/{id}/read-cursor` on any DM returned 409
+   ("membership cannot be changed") because the V7/V11 trigger treated
+   *any* row update — including a participant's own read cursor or mute
+   flag, entirely personal state — as a forbidden membership change.
+   Fixed in V14 by narrowing the block to an actual
+   `rw_channel_member_role_id` change; read-cursor and mute updates now
+   pass through, while a role-change attempt on a DM is still correctly
+   rejected (re-verified after the fix).
+
+Two more SEC-14-driven design points worth recording, decided while writing
+the use cases rather than found as bugs: `GetMessageHistoryUseCase` and
+`SendMessageUseCase` both check actual membership (`rw_fn_is_channel_member`)
+*before* touching the RLS-governed table, rather than merely checking
+visibility — because a discoverable-but-unjoined `PUBLIC` channel is
+visible via `GET /channels/{id}` but must still 404 for its message history
+and for posting, per docs/API.md. Conflating "visible" with "member" would
+have been a real, subtle authorization bug.
+
+`database/migrations/V13`, `V14` are additive-only, same convention as V10-V12.
+
+---
+
 ## Environment verified on this machine
 
 | Tool | Version |
@@ -331,4 +420,11 @@ None blocks Phase 1 through 13 locally. Details in `README.md` § Human actions.
 
 ## Next action
 
-Begin **Phase 5** — messaging REST API: channel/membership use cases and controllers over the already-built V4 functions (`rw_fn_message_history`, `rw_fn_send_message`, `rw_fn_edit_message`, `rw_fn_soft_delete_message`, `rw_fn_join_channel`, `rw_fn_leave_channel`, `rw_fn_create_channel`, `rw_fn_open_direct_channel`), the `rw_v_user_conversations` view, keyset-cursor encoding, and OpenAPI generation (`docs/BACKLOG.md` Phase 5). Every message-writing endpoint gets a live negative test (non-member send attempt) before being called done, per `CLAUDE.md`.
+Begin **Phase 6** — realtime: `PostgresNotificationListener` on a dedicated
+connection (`LISTEN rw_message_created/updated/deleted`), an in-process
+`SseHub` with membership-filtered fan-out, `POST /realtime/ticket`
+(single-use, 60s, D-15), `GET /realtime/stream`, heartbeat, and
+`Last-Event-ID`/keyset catch-up on reconnect (`docs/BACKLOG.md` Phase 6).
+Verify live with two concurrent SSE connections (a member and a non-member)
+before calling it done — the non-member must never receive an event for a
+channel it does not belong to.
