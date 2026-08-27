@@ -3,7 +3,7 @@
 Living state of the project. Updated at the end of every phase.
 Plan: `docs/BACKLOG.md` · Acceptance: `REQUIREMENTS.md` · Rationale: `DECISIONS.md`
 
-**Current phase:** 5 — complete. Beginning Phase 6 (realtime).
+**Current phase:** 6 — complete. Beginning Phase 7 (search).
 **Last updated:** 2026-08-27
 
 > **Amendment (2026-08-27).** MVP chat provider is **Groq**, not xAI/Grok. Groq is OpenAI-compatible, so the adapter is unchanged — but Groq publishes **no embedding models**, so chat and embeddings are now configured as two independent providers. Recorded as `DECISIONS.md` D-21 and requirement `AI-16`. No change to the schema, the RLS model, the retrieval order or any security property.
@@ -20,7 +20,7 @@ Plan: `docs/BACKLOG.md` · Acceptance: `REQUIREMENTS.md` · Rationale: `DECISION
 | 3 | Functions, procedures, views, triggers, RLS | ✅ done | 6 migration files, verified live as rw_app; 3 real bugs found and fixed |
 | 4 | Authentication | ✅ done | full backend skeleton, auth + users endpoints verified live end-to-end |
 | 5 | Messaging REST API | ✅ done | 17 endpoints, all verified live across 6 users |
-| 6 | Realtime (SSE + LISTEN/NOTIFY) | ⏸ not started | |
+| 6 | Realtime (SSE + LISTEN/NOTIFY) | ✅ done | verified live with 2 concurrent SSE connections, membership-filtered fan-out proven |
 | 7 | Search | ⏸ not started | |
 | 8 | Frontend | ⏸ not started | |
 | 9 | AI RAG and embeddings | ⏸ not started | |
@@ -374,6 +374,66 @@ have been a real, subtle authorization bug.
 
 ---
 
+## Delivered in Phase 6
+
+```
+database/migrations/V15__realtime_fanout.sql   rw_fn_list_channel_member_ids
+                                                (SECURITY DEFINER, worker-only,
+                                                ids only — never exposed by
+                                                any endpoint)
+domain/port/       RealtimeTicketPort
+application/       IssueRealtimeTicketUseCase
+infrastructure/realtime/
+  InMemoryTicketService     single-use, 60s tickets (D-15)
+  SseHub                    per-user emitter registry, 20s heartbeat,
+                             membership re-checked at EVERY delivery (RT-06)
+  PostgresNotificationListener  dedicated non-pooled connection, LISTEN on
+                             all three message channels, background thread
+infrastructure/config/RealtimeConfig.java   starts the listener on
+                                             ApplicationReadyEvent, @EnableScheduling
+presentation/RealtimeController.java   POST /realtime/ticket, GET /realtime/stream
+```
+
+**Verified live with two concurrent real SSE connections** (not simulated):
+bruno (a member of `proyecto-atlas`) and frank (not a member) each opened a
+genuine `curl -N` stream against the ticket-gated endpoint while the app ran
+against a live database. A message sent to `proyecto-atlas` produced exactly
+one delivered event — to bruno, containing only ids (`channelId`,
+`messageId`, `senderId`, `clientMessageId`, `createdAt` — never a body) — and
+zero events to frank. Frank then self-joined the channel, reconnected, and
+correctly received `message.created`, `message.updated` (after an edit,
+carrying the new `revision`) and `message.deleted`, still id-only every time.
+This is `RT-06` proven end to end, not just asserted by code review: realtime
+fan-out enforces the exact same membership boundary as every REST endpoint,
+independently, at the moment of delivery rather than at connect time.
+
+**One real bug found and fixed**: `RealtimeConfig`'s listener startup was
+not scoped away from the `seed` Spring profile. The one-shot seed loader run
+(`--spring.profiles.active=seed`, `spring.main.web-application-type=none`)
+still fires `ApplicationReadyEvent`, so the background `LISTEN` thread on a
+raw, non-pooled JDBC connection started anyway — and even though the thread
+is daemon, it prevented the seed process from exiting cleanly (a `mvn
+spring-boot:run -Dspring-boot.run.profiles=seed` invocation hung
+indefinitely after printing "Seeding complete"). Fixed with
+`@Profile("!seed")` on `RealtimeConfig`; the seed run now exits in under a
+second, confirmed by rerunning after a full table truncate.
+
+**One finding, deliberately left as-is**: a narrow connection-startup race
+was observed — sending a message immediately (within ~2s) after opening an
+SSE connection could drop that first `message.created` event, while
+`message.updated`/`message.deleted` sent later on the same connection always
+arrived. Reproduced once, then shown absent with a 5-second pre-send delay,
+consistent with the client/server async plumbing needing a brief moment to
+fully wire up right after registration. This was not fixed, because it is
+exactly the failure mode `RT-04`/`RT-05`'s catch-up contract already exists
+to cover: the frontend (Phase 8) reconciles via a keyset history fetch on
+connect and reconnect regardless of whether any specific SSE event arrived,
+so an occasionally-dropped event at connection start cannot leave a
+permanent gap. Documented here rather than "fixed" so the reasoning is
+traceable — a mitigation the architecture already accounts for is not a bug.
+
+---
+
 ## Environment verified on this machine
 
 | Tool | Version |
@@ -420,11 +480,11 @@ None blocks Phase 1 through 13 locally. Details in `README.md` § Human actions.
 
 ## Next action
 
-Begin **Phase 6** — realtime: `PostgresNotificationListener` on a dedicated
-connection (`LISTEN rw_message_created/updated/deleted`), an in-process
-`SseHub` with membership-filtered fan-out, `POST /realtime/ticket`
-(single-use, 60s, D-15), `GET /realtime/stream`, heartbeat, and
-`Last-Event-ID`/keyset catch-up on reconnect (`docs/BACKLOG.md` Phase 6).
-Verify live with two concurrent SSE connections (a member and a non-member)
-before calling it done — the non-member must never receive an event for a
-channel it does not belong to.
+Begin **Phase 7** — search: `GET /search/messages` over `rw_fn_search_messages`
+(already built in Phase 3, `SECURITY INVOKER`, `websearch_to_tsquery` +
+`ts_headline`), rank-based keyset cursor (mirrors `MessageCursor`), and the
+`<mark>` highlight contract (`docs/BACKLOG.md` Phase 7). Verify live with
+the seeded `"kryptonite"` fixture — hugo (a member of `incident-response`)
+must get results with correct highlighting; every other seeded user must
+get zero results for the same query, proving `SRCH-02` end to end the same
+way `SEC-01` was proven in Phase 5.

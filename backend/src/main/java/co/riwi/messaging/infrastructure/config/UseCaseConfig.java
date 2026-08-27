@@ -140,4 +140,9 @@ public class UseCaseConfig {
     public DeleteMessageUseCase deleteMessageUseCase(MessageRepository messageRepository, TransactionRunner transactionRunner) {
         return new DeleteMessageUseCase(messageRepository, transactionRunner);
     }
+
+    @Bean
+    public IssueRealtimeTicketUseCase issueRealtimeTicketUseCase(RealtimeTicketPort ticketPort) {
+        return new IssueRealtimeTicketUseCase(ticketPort);
+    }
 }

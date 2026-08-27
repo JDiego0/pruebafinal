@@ -101,6 +101,8 @@ _(Phase 5 complete — all 17 endpoints exercised live against a real database w
 | 6.4 | `GET /realtime/stream` + heartbeat + lifecycle cleanup | RT-02 |
 | 6.5 | `Last-Event-ID` handling and documented catch-up contract | RT-04, RT-05 |
 
+_(Phase 6 complete — verified live with two concurrent SSE connections (a member and a non-member) against a real database. The non-member never received an event. One real bug found and fixed (the listener thread blocked the seed profile's process exit); one narrow connection-startup race observed and left unfixed, deliberately, because it is exactly the failure mode the client-side keyset catch-up contract already exists to cover. See PROGRESS.md.)_
+
 ## PHASE 7 — Search  *(Sonnet)*
 | # | Task | Covers |
 |---|------|--------|

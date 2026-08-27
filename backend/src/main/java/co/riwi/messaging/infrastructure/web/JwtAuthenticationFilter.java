@@ -30,7 +30,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private static final Set<String> PUBLIC_PREFIXES = Set.of(
             "/api/v1/auth/login", "/api/v1/auth/refresh", "/api/v1/health",
-            "/api/v1/openapi.json", "/swagger-ui", "/v3/api-docs"
+            "/api/v1/openapi.json", "/swagger-ui", "/v3/api-docs",
+            // D-15: EventSource cannot set an Authorization header — this
+            // endpoint authenticates via a single-use ticket instead
+            // (RealtimeController), never a bearer token.
+            "/api/v1/realtime/stream"
     );
 
     private final JwtService jwtService;
