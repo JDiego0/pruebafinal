@@ -1,0 +1,202 @@
+%% Riwi Messaging Platform — ER model
+%% Database: bd_juandiego_garcia_nakamoto · Schema: rw
+%% Render: npx -y @mermaid-js/mermaid-cli -i docs/diagrams/er.mmd -o docs/diagrams/er.svg
+
+erDiagram
+    rw_roles {
+        smallint rw_role_id PK
+        text     rw_role_code UK
+        text     rw_role_name
+        text     rw_description
+    }
+    rw_users {
+        uuid        rw_user_id PK
+        text        rw_email UK "partial unique on lower(email) where active"
+        text        rw_display_name
+        smallint    rw_role_id FK
+        text        rw_locale
+        text        rw_avatar_url
+        boolean     rw_is_active
+        timestamptz rw_created_at
+        timestamptz rw_updated_at
+        timestamptz rw_last_seen_at
+    }
+    rw_user_credentials {
+        uuid        rw_user_id PK "FK 1:1"
+        text        rw_password_hash
+        text        rw_password_algorithm
+        timestamptz rw_password_updated_at
+        integer     rw_failed_attempts
+        timestamptz rw_locked_until
+    }
+    rw_refresh_tokens {
+        uuid        rw_refresh_token_id PK
+        uuid        rw_user_id FK
+        uuid        rw_family_id "partial unique where not revoked"
+        bytea       rw_token_hash UK
+        timestamptz rw_issued_at
+        timestamptz rw_expires_at
+        timestamptz rw_revoked_at
+        text        rw_revoked_reason
+        uuid        rw_replaced_by_token_id FK
+    }
+    rw_channel_types {
+        smallint rw_channel_type_id PK
+        text     rw_channel_type_code UK
+        text     rw_description
+    }
+    rw_channels {
+        uuid        rw_channel_id PK
+        smallint    rw_channel_type_id FK
+        text        rw_slug "partial unique where not null"
+        text        rw_name
+        text        rw_topic
+        uuid        rw_created_by FK
+        boolean     rw_is_archived
+        timestamptz rw_created_at
+        timestamptz rw_updated_at
+    }
+    rw_channel_member_roles {
+        smallint rw_channel_member_role_id PK
+        text     rw_channel_member_role_code UK
+        text     rw_description
+    }
+    rw_channel_members {
+        uuid        rw_channel_id PK "FK"
+        uuid        rw_user_id PK "FK"
+        smallint    rw_channel_member_role_id FK
+        timestamptz rw_joined_at
+        bigint      rw_last_read_message_id FK
+        boolean     rw_is_muted
+    }
+    rw_direct_channel_pairs {
+        uuid rw_channel_id PK "FK 1:1"
+        uuid rw_user_id_low FK "UK with high"
+        uuid rw_user_id_high FK
+    }
+    rw_messages {
+        bigint      rw_message_id PK
+        uuid        rw_channel_id FK
+        uuid        rw_sender_id FK
+        bigint      rw_parent_message_id FK
+        text        rw_body
+        uuid        rw_client_message_id "UK with channel and sender"
+        boolean     rw_is_deleted
+        timestamptz rw_deleted_at
+        uuid        rw_deleted_by FK
+        timestamptz rw_edited_at
+        integer     rw_revision
+        timestamptz rw_created_at
+        tsvector    rw_search_vector "GENERATED ALWAYS STORED"
+    }
+    rw_message_edits {
+        bigint      rw_message_edit_id PK
+        bigint      rw_message_id FK
+        text        rw_previous_body
+        integer     rw_previous_revision
+        uuid        rw_edited_by FK
+        timestamptz rw_edited_at
+    }
+    rw_ai_providers {
+        smallint rw_ai_provider_id PK
+        text     rw_provider_code UK
+        text     rw_display_name
+        boolean  rw_is_openai_compatible
+        boolean  rw_is_active
+    }
+    rw_embedding_models {
+        smallint rw_embedding_model_id PK
+        smallint rw_ai_provider_id FK
+        text     rw_model_code UK
+        integer  rw_dimensions
+        boolean  rw_is_active
+    }
+    rw_message_embeddings {
+        bigint      rw_message_id PK "FK 1:1"
+        smallint    rw_embedding_model_id FK
+        vector      rw_embedding "vector(1536), HNSW cosine"
+        integer     rw_source_revision
+        bytea       rw_content_hash
+        timestamptz rw_created_at
+    }
+    rw_embedding_jobs {
+        bigint      rw_embedding_job_id PK
+        bigint      rw_message_id FK
+        timestamptz rw_enqueued_at
+        timestamptz rw_processed_at
+        integer     rw_attempts
+        text        rw_last_error
+    }
+    rw_system_prompts {
+        smallint    rw_system_prompt_id PK
+        text        rw_prompt_version UK
+        text        rw_prompt_body
+        boolean     rw_is_active "partial unique where active"
+        timestamptz rw_created_at
+    }
+    rw_copilot_threads {
+        uuid        rw_copilot_thread_id PK
+        uuid        rw_user_id FK
+        uuid        rw_channel_id FK
+        text        rw_title
+        timestamptz rw_created_at
+        timestamptz rw_updated_at
+    }
+    rw_copilot_turns {
+        uuid        rw_copilot_turn_id PK
+        uuid        rw_copilot_thread_id FK
+        smallint    rw_system_prompt_id FK
+        text        rw_question
+        text        rw_answer
+        text        rw_answer_status
+        integer     rw_candidate_count
+        timestamptz rw_created_at
+    }
+    rw_copilot_citations {
+        bigint   rw_copilot_citation_id PK
+        uuid     rw_copilot_turn_id FK
+        bigint   rw_message_id FK
+        real     rw_similarity
+        smallint rw_rank
+    }
+    rw_copilot_usage {
+        bigint      rw_copilot_usage_id PK
+        uuid        rw_user_id FK
+        uuid        rw_copilot_turn_id FK
+        smallint    rw_ai_provider_id FK
+        text        rw_model_code
+        text        rw_operation
+        integer     rw_prompt_tokens
+        integer     rw_completion_tokens
+        integer     rw_total_tokens
+        integer     rw_latency_ms
+        timestamptz rw_created_at
+    }
+
+    rw_roles                ||--o{ rw_users                : classifies
+    rw_users                ||--|| rw_user_credentials     : "authenticates with"
+    rw_users                ||--o{ rw_refresh_tokens       : holds
+    rw_users                ||--o{ rw_channels             : creates
+    rw_channel_types        ||--o{ rw_channels             : types
+    rw_users                ||--o{ rw_channel_members      : "joins as"
+    rw_channels             ||--o{ rw_channel_members      : "has member"
+    rw_channel_member_roles ||--o{ rw_channel_members      : grants
+    rw_channels             ||--o| rw_direct_channel_pairs : "canonicalized by"
+    rw_users                ||--o{ rw_direct_channel_pairs : participates
+    rw_channels             ||--o{ rw_messages             : contains
+    rw_users                ||--o{ rw_messages             : sends
+    rw_messages             ||--o{ rw_messages             : "replies to"
+    rw_messages             ||--o{ rw_message_edits        : "revised in"
+    rw_messages             ||--o| rw_message_embeddings   : "vectorized as"
+    rw_messages             ||--o{ rw_embedding_jobs       : "queued in"
+    rw_ai_providers         ||--o{ rw_embedding_models     : offers
+    rw_embedding_models     ||--o{ rw_message_embeddings   : "produced by"
+    rw_users                ||--o{ rw_copilot_threads      : owns
+    rw_channels             ||--o{ rw_copilot_threads      : scopes
+    rw_copilot_threads      ||--o{ rw_copilot_turns        : contains
+    rw_system_prompts       ||--o{ rw_copilot_turns        : governs
+    rw_copilot_turns        ||--o{ rw_copilot_citations    : grounds
+    rw_messages             ||--o{ rw_copilot_citations    : "cited by"
+    rw_users                ||--o{ rw_copilot_usage        : accrues
+    rw_copilot_turns        ||--o| rw_copilot_usage        : "billed as"
+    rw_ai_providers         ||--o{ rw_copilot_usage        : serves
