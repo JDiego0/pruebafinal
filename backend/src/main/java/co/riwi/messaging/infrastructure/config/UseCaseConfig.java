@@ -145,4 +145,9 @@ public class UseCaseConfig {
     public IssueRealtimeTicketUseCase issueRealtimeTicketUseCase(RealtimeTicketPort ticketPort) {
         return new IssueRealtimeTicketUseCase(ticketPort);
     }
+
+    @Bean
+    public SearchMessagesUseCase searchMessagesUseCase(MessageSearchRepository searchRepository, TransactionRunner transactionRunner) {
+        return new SearchMessagesUseCase(searchRepository, transactionRunner);
+    }
 }
