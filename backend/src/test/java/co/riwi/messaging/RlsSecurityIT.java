@@ -1,201 +1,355 @@
 package co.riwi.messaging;
 
 import co.riwi.messaging.application.command.CreateChannelCommand;
+import co.riwi.messaging.application.command.LoginCommand;
 import co.riwi.messaging.application.command.SendMessageCommand;
+import co.riwi.messaging.application.result.SessionResult;
 import co.riwi.messaging.application.usecase.CreateChannelUseCase;
+import co.riwi.messaging.application.usecase.DeleteMessageUseCase;
+import co.riwi.messaging.application.usecase.EditMessageUseCase;
 import co.riwi.messaging.application.usecase.GetMessageHistoryUseCase;
+import co.riwi.messaging.application.usecase.JoinChannelUseCase;
+import co.riwi.messaging.application.usecase.LoginUseCase;
 import co.riwi.messaging.application.usecase.OpenDirectChannelUseCase;
+import co.riwi.messaging.application.usecase.SearchMessagesUseCase;
 import co.riwi.messaging.application.usecase.SendMessageUseCase;
+import co.riwi.messaging.domain.error.AuthenticationFailed;
 import co.riwi.messaging.domain.error.ResourceNotVisible;
 import co.riwi.messaging.domain.model.ChannelId;
+import co.riwi.messaging.domain.model.MessageId;
+import co.riwi.messaging.domain.model.MessageRecord;
+import co.riwi.messaging.domain.model.RagCandidate;
+import co.riwi.messaging.domain.model.SearchHit;
 import co.riwi.messaging.domain.model.UserId;
+import co.riwi.messaging.domain.port.EmbeddingProvider;
+import co.riwi.messaging.domain.port.PasswordHasher;
+import co.riwi.messaging.domain.port.RagRepository;
 import co.riwi.messaging.domain.port.TransactionRunner;
-import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
-import javax.sql.DataSource;
-import java.util.Map;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+/**
+ * The mandatory PostgreSQL security suite (TEST-01..TEST-11).
+ *
+ * <p>Every assertion runs against a real PostgreSQL server with the production
+ * migrations applied, and the application connects as {@code rw_app}
+ * (NOSUPERUSER, NOBYPASSRLS) — the same identity the running backend uses.
+ * Nothing here is stubbed: when a row is not returned it is because the
+ * database refused to return it.
+ */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
-@Testcontainers
 class RlsSecurityIT {
 
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("pgvector/pgvector:pg16")
-            .withDatabaseName("bd_juandiego_garcia_nakamoto")
-            .withUsername("postgres")
-            .withPassword("postgres");
+    private static final AtomicInteger SEQ = new AtomicInteger();
+
+    @BeforeAll
+    static void migrate() {
+        PostgresTestSupport.migrateAndSeedCatalogues();
+    }
 
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
-        registry.add("app.datasource.jdbc-url", postgres::getJdbcUrl);
+        PostgresTestSupport.migrateAndSeedCatalogues();
+        registry.add("app.datasource.jdbc-url", PostgresTestSupport::jdbcUrl);
         registry.add("app.datasource.app-user", () -> "rw_app");
-        registry.add("app.datasource.app-password", () -> "app_pass");
+        registry.add("app.datasource.app-password", () -> PostgresTestSupport.APP_PASSWORD);
         registry.add("app.datasource.migrator-user", () -> "rw_migrator");
-        registry.add("app.datasource.migrator-password", () -> "mig_pass");
+        registry.add("app.datasource.migrator-password", () -> PostgresTestSupport.MIGRATOR_PASSWORD);
+        registry.add("app.jwt.secret", () -> "dGVzdC1zZWNyZXQtdGhhdC1pcy1sb25nLWVub3VnaC1mb3ItaHMyNTYtc2lnbmluZw==");
         registry.add("spring.flyway.enabled", () -> "false");
     }
 
-    @BeforeAll
-    static void beforeAll() {
-        Flyway flyway = Flyway.configure()
-                .dataSource(postgres.getJdbcUrl(), "postgres", "postgres")
-                .locations("filesystem:../database/migrations")
-                .placeholders(Map.of(
-                        "rwMigratorPassword", "mig_pass",
-                        "rwAppPassword", "app_pass"
-                ))
-                .load();
-        flyway.migrate();
-    }
+    @Autowired JdbcTemplate jdbcTemplate;
+    @Autowired TransactionRunner transactionRunner;
+    @Autowired PasswordHasher passwordHasher;
+    @Autowired EmbeddingProvider embeddingProvider;
+    @Autowired RagRepository ragRepository;
+    @Autowired CreateChannelUseCase createChannelUseCase;
+    @Autowired OpenDirectChannelUseCase openDirectChannelUseCase;
+    @Autowired JoinChannelUseCase joinChannelUseCase;
+    @Autowired SendMessageUseCase sendMessageUseCase;
+    @Autowired EditMessageUseCase editMessageUseCase;
+    @Autowired DeleteMessageUseCase deleteMessageUseCase;
+    @Autowired GetMessageHistoryUseCase getMessageHistoryUseCase;
+    @Autowired SearchMessagesUseCase searchMessagesUseCase;
+    @Autowired LoginUseCase loginUseCase;
 
-    @Autowired
-    JdbcTemplate jdbcTemplate;
-
-    @Autowired
-    TransactionRunner transactionRunner;
-
-    @Autowired
-    CreateChannelUseCase createChannelUseCase;
-    
-    @Autowired
-    OpenDirectChannelUseCase openDirectChannelUseCase;
-
-    @Autowired
-    SendMessageUseCase sendMessageUseCase;
-
-    @Autowired
-    GetMessageHistoryUseCase getMessageHistoryUseCase;
+    // ── SEC-01 ───────────────────────────────────────────────────────────────
 
     @Test
-    void test1_nonMemberCannotReadPrivateChannel() {
-        UserId owner = UserId.of(insertDummyUser("alice@riwi.co", "alice"));
-        UserId outsider = UserId.of(insertDummyUser("bob@riwi.co", "bob"));
+    @DisplayName("TEST-01: a non-member gets nothing from a private channel history")
+    void nonMemberCannotReadPrivateChannelHistory() {
+        UserId owner = createUser("owner");
+        UserId outsider = createUser("outsider");
 
-        ChannelId channelId = createChannelUseCase.execute(owner, new CreateChannelCommand("PRIVATE", "Secret", "secret", "Secret topic"));
-        sendMessageUseCase.execute(owner, channelId, new SendMessageCommand("Top secret message", UUID.randomUUID(), null));
+        ChannelId channel = createChannelUseCase.execute(owner,
+                new CreateChannelCommand("PRIVATE", "Board room", slug("board"), "Confidential"));
+        sendMessageUseCase.execute(owner, channel,
+                new SendMessageCommand("Acquisition closes on Friday", UUID.randomUUID(), null));
 
-        assertThatThrownBy(() -> getMessageHistoryUseCase.execute(outsider, channelId, null, null, 50))
+        assertThat(getMessageHistoryUseCase.execute(owner, channel, null, null, 50)).hasSize(1);
+
+        assertThatThrownBy(() -> getMessageHistoryUseCase.execute(outsider, channel, null, null, 50))
+                .isInstanceOf(ResourceNotVisible.class);
+
+        // The same question asked straight at the table, as the outsider: still zero rows.
+        Integer visible = transactionRunner.runAsActor(outsider, () -> jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM rw.rw_messages WHERE rw_channel_id = ?", Integer.class, channel.value()));
+        assertThat(visible).isZero();
+    }
+
+    // ── SEC-02 ───────────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("TEST-02: a third party gets nothing from someone elses direct channel")
+    void thirdPartyCannotReadDirectChannel() {
+        UserId a = createUser("dm-a");
+        UserId b = createUser("dm-b");
+        UserId c = createUser("dm-c");
+
+        ChannelId dm = openDirectChannelUseCase.execute(a, b).channelId();
+        sendMessageUseCase.execute(a, dm, new SendMessageCommand("Just between us", UUID.randomUUID(), null));
+
+        assertThat(getMessageHistoryUseCase.execute(b, dm, null, null, 50)).hasSize(1);
+        assertThatThrownBy(() -> getMessageHistoryUseCase.execute(c, dm, null, null, 50))
                 .isInstanceOf(ResourceNotVisible.class);
     }
-    
+
+    // ── SEC-04 ───────────────────────────────────────────────────────────────
+
     @Test
-    void test2_thirdPartyCannotReadDirectChannel() {
-        UserId a = UserId.of(insertDummyUser("carol@riwi.co", "carol"));
-        UserId b = UserId.of(insertDummyUser("dave@riwi.co", "dave"));
-        UserId c = UserId.of(insertDummyUser("eve@riwi.co", "eve"));
-        
-        ChannelId dmId = openDirectChannelUseCase.execute(a, b);
-        sendMessageUseCase.execute(a, dmId, new SendMessageCommand("Hello dave", UUID.randomUUID(), null));
-        
-        assertThatThrownBy(() -> getMessageHistoryUseCase.execute(c, dmId, null, null, 50))
-                .isInstanceOf(ResourceNotVisible.class);
+    @DisplayName("TEST-04: full-text search never returns a message the actor cannot read")
+    void searchDoesNotLeakUnauthorizedMessages() {
+        UserId owner = createUser("search-owner");
+        UserId outsider = createUser("search-outsider");
+
+        ChannelId privateChannel = createChannelUseCase.execute(owner,
+                new CreateChannelCommand("PRIVATE", "Kryptonite", slug("krypto"), "Weakness"));
+        sendMessageUseCase.execute(owner, privateChannel,
+                new SendMessageCommand("kryptonite is our only weakness", UUID.randomUUID(), null));
+
+        List<SearchHit> ownerHits = searchMessagesUseCase.execute(owner, "kryptonite", null, null, null, 10);
+        assertThat(ownerHits).isNotEmpty();
+
+        List<SearchHit> outsiderHits = searchMessagesUseCase.execute(outsider, "kryptonite", null, null, null, 10);
+        assertThat(outsiderHits).isEmpty();
     }
 
+    // ── SEC-06 / AI-08 ───────────────────────────────────────────────────────
+
     @Test
-    void test4_ragIsolation() {
-        UserId userA = UserId.of(insertDummyUser("userA@riwi.co", "userA"));
-        UserId userB = UserId.of(insertDummyUser("userB@riwi.co", "userB"));
+    @DisplayName("TEST-05: RAG retrieval returns only messages the actor is authorized to read")
+    void ragRetrievalIsRlsScoped() {
+        UserId owner = createUser("rag-owner");
+        UserId outsider = createUser("rag-outsider");
 
-        ChannelId publicChannel = createChannelUseCase.execute(userA, new CreateChannelCommand("PUBLIC", "Public Topic", "public-topic", "Public"));
-        ChannelId privateChannel = createChannelUseCase.execute(userA, new CreateChannelCommand("PRIVATE", "Private Topic", "private-topic", "Private"));
+        ChannelId open = createChannelUseCase.execute(owner,
+                new CreateChannelCommand("PUBLIC", "Release notes", slug("release"), "Shipping"));
+        ChannelId secret = createChannelUseCase.execute(owner,
+                new CreateChannelCommand("PRIVATE", "Severance", slug("severance"), "Confidential"));
+        joinChannelUseCase.execute(outsider, open);
 
-        MessageId pubMsg = sendMessageUseCase.execute(userA, publicChannel, new SendMessageCommand("The Thursday 10am demo", UUID.randomUUID(), null)).messageId();
-        MessageId privMsg = sendMessageUseCase.execute(userA, privateChannel, new SendMessageCommand("The Thursday 10am demo", UUID.randomUUID(), null)).messageId();
+        String sharedText = "the Thursday ten o clock demo";
+        MessageId publicMessage = sendMessageUseCase.execute(owner, open,
+                new SendMessageCommand(sharedText, UUID.randomUUID(), null)).messageId();
+        MessageId secretMessage = sendMessageUseCase.execute(owner, secret,
+                new SendMessageCommand(sharedText, UUID.randomUUID(), null)).messageId();
 
-        float[] queryVector = new float[1536]; // dummy zero vector to match any
-        
-        // Since test relies on RagRepository, we fetch candidates using userB (who only sees publicChannel)
-        // UserB hasn't joined publicChannel, so wait, they must join to see it? Yes.
-        // Let's use userA instead, they see both. 
-        // We will just do a direct query to RagRepository as userB and ensure privMsg is not there.
-        Boolean canSeePriv = transactionRunner.runAsActor(userB, () -> {
-            Integer count = jdbcTemplate.queryForObject("SELECT count(*) FROM rw.rw_messages WHERE rw_message_id = ?", Integer.class, privMsg.value());
-            return count > 0;
-        });
-        
-        assertThat(canSeePriv).isFalse();
+        float[] vector = embeddingProvider.embed(List.of(sharedText)).get(0);
+        storeEmbedding(publicMessage, vector);
+        storeEmbedding(secretMessage, vector);
+
+        List<RagCandidate> ownerCandidates = transactionRunner.runAsActor(owner,
+                () -> ragRepository.retrieveCandidates(vector, null, 50, 0.0));
+        assertThat(ownerCandidates).extracting(c -> c.messageId().value())
+                .contains(publicMessage.value(), secretMessage.value());
+
+        List<RagCandidate> outsiderCandidates = transactionRunner.runAsActor(outsider,
+                () -> ragRepository.retrieveCandidates(vector, null, 50, 0.0));
+        assertThat(outsiderCandidates).extracting(c -> c.messageId().value())
+                .contains(publicMessage.value())
+                .doesNotContain(secretMessage.value());
     }
 
-    @Test
-    void test5_searchIsolation() {
-        UserId user = UserId.of(insertDummyUser("user@riwi.co", "user"));
-        UserId outsider = UserId.of(insertDummyUser("outsider@riwi.co", "outsider"));
-        
-        ChannelId privateChannel = createChannelUseCase.execute(user, new CreateChannelCommand("PRIVATE", "Kryptonite", "krypto", "Top secret"));
-        sendMessageUseCase.execute(user, privateChannel, new SendMessageCommand("kryptonite is our weakness", UUID.randomUUID(), null));
-        
-        Boolean canSearch = transactionRunner.runAsActor(outsider, () -> {
-            Integer count = jdbcTemplate.queryForObject("SELECT count(*) FROM rw_fn_search_messages('kryptonite', null, null, null, 10)", Integer.class);
-            return count > 0;
-        });
-        
-        assertThat(canSearch).isFalse();
-    }
+    // ── SEC-11 ───────────────────────────────────────────────────────────────
 
     @Test
-    void test9_refreshRotationReplay() {
-        // Just verify rw_ux_refresh_tokens_family_active index exists and rotation logic from DB.
-        // Or check that testing this requires JwtService. We will do a DB constraint check instead.
-        Integer count = jdbcTemplate.queryForObject(
-                "SELECT count(*) FROM pg_indexes WHERE indexname = 'rw_ux_refresh_tokens_family_active'", Integer.class);
-        assertThat(count).isEqualTo(1);
+    @DisplayName("TEST-06: rw_app is NOSUPERUSER and NOBYPASSRLS")
+    void applicationRoleCannotBypassRls() {
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT rolsuper FROM pg_roles WHERE rolname = 'rw_app'", Boolean.class)).isFalse();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT rolbypassrls FROM pg_roles WHERE rolname = 'rw_app'", Boolean.class)).isFalse();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT current_user", String.class)).isEqualTo("rw_app");
     }
 
+    // ── SEC-13 ───────────────────────────────────────────────────────────────
+
     @Test
-    void test10_editHistoryAndEmbeddingInvalidation() {
-        // Check triggers exist
-        Integer triggersCount = jdbcTemplate.queryForObject(
-                "SELECT count(*) FROM pg_trigger WHERE tgname IN ('rw_trg_messages_block_delete', 'rw_trg_messages_edit_history', 'rw_trg_messages_embedding_invalidate')", Integer.class);
-        assertThat(triggersCount).isEqualTo(3);
+    @DisplayName("TEST-07: with no actor bound, user content is invisible")
+    void unsetActorSeesNothing() {
+        UserId owner = createUser("anon-probe");
+        ChannelId channel = createChannelUseCase.execute(owner,
+                new CreateChannelCommand("PUBLIC", "Anon probe", slug("anon"), "Probe"));
+        sendMessageUseCase.execute(owner, channel,
+                new SendMessageCommand("visible to members", UUID.randomUUID(), null));
+
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM rw.rw_messages", Integer.class)).isZero();
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM rw.rw_channels", Integer.class)).isZero();
     }
 
-    
+    // ── MSG-01 ───────────────────────────────────────────────────────────────
+
     @Test
-    void test7_rwAppRoleFlags() {
-        Boolean isSuperuser = jdbcTemplate.queryForObject(
-                "SELECT rolsuper FROM pg_roles WHERE rolname = 'rw_app'", Boolean.class);
-        Boolean isBypassRls = jdbcTemplate.queryForObject(
-                "SELECT rolbypassrls FROM pg_roles WHERE rolname = 'rw_app'", Boolean.class);
-        
-        assertThat(isSuperuser).isFalse();
-        assertThat(isBypassRls).isFalse();
-    }
-    
-    @Test
-    void test8_actorUnsetReturnsZeroRows() {
-        Integer count = jdbcTemplate.queryForObject("SELECT count(*) FROM rw.rw_messages", Integer.class);
-        assertThat(count).isEqualTo(0);
-    }
-    
-    @Test
-    void test6_physicalDeleteRejected() {
+    @DisplayName("TEST-08: messages can never be physically deleted")
+    void physicalDeleteIsImpossible() {
         assertThatThrownBy(() -> jdbcTemplate.update("DELETE FROM rw.rw_messages"))
+                .rootCause()
                 .hasMessageContaining("permission denied");
+
+        Integer deletePolicies = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM pg_policies WHERE schemaname = 'rw' AND tablename = 'rw_messages' AND cmd = 'DELETE'",
+                Integer.class);
+        assertThat(deletePolicies).isZero();
+
+        Integer blockTrigger = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM pg_trigger WHERE tgname = 'rw_trg_messages_block_delete'", Integer.class);
+        assertThat(blockTrigger).isEqualTo(1);
     }
 
-    private UUID insertDummyUser(String email, String username) {
+    // ── AUTH ─────────────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("TEST-09: login issues a session for the right password and refuses the wrong one")
+    void authenticationWorks() {
+        UserId user = createUser("auth");
+        String email = "auth-" + user.value() + "@riwi.co";
+        setPassword(user, email, "Correct-Horse-Battery-9");
+
+        SessionResult session = loginUseCase.execute(
+                new LoginCommand(email, "Correct-Horse-Battery-9", "junit", "127.0.0.1"));
+        assertThat(session.accessToken()).isNotBlank();
+        assertThat(session.rawRefreshToken()).isNotBlank();
+        assertThat(session.user().userId().value()).isEqualTo(user.value());
+
+        assertThatThrownBy(() -> loginUseCase.execute(
+                new LoginCommand(email, "wrong-password", "junit", "127.0.0.1")))
+                .isInstanceOf(AuthenticationFailed.class);
+    }
+
+    // ── MSG-02, MSG-04 ───────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("TEST-10: edit keeps history, delete is logical, pagination is keyset")
+    void editDeleteAndKeysetPagination() {
+        UserId owner = createUser("edit-owner");
+        ChannelId channel = createChannelUseCase.execute(owner,
+                new CreateChannelCommand("PUBLIC", "Edits", slug("edits"), "Editing"));
+
+        for (int i = 0; i < 5; i++) {
+            sendMessageUseCase.execute(owner, channel,
+                    new SendMessageCommand("message " + i, UUID.randomUUID(), null));
+        }
+
+        List<MessageRecord> firstPage = getMessageHistoryUseCase.execute(owner, channel, null, null, 2);
+        assertThat(firstPage).hasSize(2);
+        MessageRecord last = firstPage.get(firstPage.size() - 1);
+        List<MessageRecord> secondPage = getMessageHistoryUseCase.execute(
+                owner, channel, last.createdAt(), last.messageId(), 2);
+        assertThat(secondPage).hasSize(2);
+        assertThat(secondPage).extracting(m -> m.messageId().value())
+                .doesNotContainAnyElementsOf(firstPage.stream().map(m -> m.messageId().value()).toList());
+
+        MessageId target = firstPage.get(0).messageId();
+        editMessageUseCase.execute(owner, target, "message 4 (corrected)");
+        MessageRecord edited = getMessageHistoryUseCase.execute(owner, channel, null, null, 1).get(0);
+        assertThat(edited.body()).isEqualTo("message 4 (corrected)");
+        assertThat(edited.revision()).isEqualTo(2);
+        assertThat(edited.editedAt()).isNotNull();
+
+        Integer editRows = transactionRunner.runAsActor(owner, () -> jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM rw.rw_message_edits WHERE rw_message_id = ?", Integer.class, target.value()));
+        assertThat(editRows).isEqualTo(1);
+
+        deleteMessageUseCase.execute(owner, target);
+        MessageRecord tombstone = getMessageHistoryUseCase.execute(owner, channel, null, null, 1).get(0);
+        assertThat(tombstone.deleted()).isTrue();
+        assertThat(tombstone.body()).isNull();
+
+        Long stillThere = PostgresTestSupport.migratorTemplate().queryForObject(
+                "SELECT count(*) FROM rw.rw_messages WHERE rw_message_id = ?", Long.class, target.value());
+        assertThat(stillThere).isEqualTo(1L);
+    }
+
+    // ── TEST-11 ──────────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("TEST-11: RLS is enabled and forced on every table in the rw schema")
+    void rlsIsEnabledAndForcedEverywhere() {
+        List<String> unprotected = jdbcTemplate.queryForList("""
+                SELECT c.relname
+                FROM pg_class c
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname = 'rw' AND c.relkind = 'r'
+                  AND (NOT c.relrowsecurity OR NOT c.relforcerowsecurity)
+                ORDER BY 1
+                """, String.class);
+        assertThat(unprotected)
+                .as("every table in the rw schema must have RLS enabled AND forced")
+                .isEmpty();
+    }
+
+    // ── helpers ──────────────────────────────────────────────────────────────
+
+    private String slug(String base) {
+        return base + "-" + SEQ.incrementAndGet();
+    }
+
+    private UserId createUser(String prefix) {
         UUID id = UUID.randomUUID();
-        DataSource migratorDs = new DriverManagerDataSource(postgres.getJdbcUrl(), "rw_migrator", "mig_pass");
-        JdbcTemplate migratorTemplate = new JdbcTemplate(migratorDs);
-        migratorTemplate.update(
-                "INSERT INTO rw.rw_users (rw_user_id, rw_email, rw_username, rw_locale, rw_role_id) VALUES (?, ?, ?, 'en', 'MEMBER')",
-                id, email, username
-        );
-        return id;
+        PostgresTestSupport.migratorTemplate().update("""
+                INSERT INTO rw.rw_users (rw_user_id, rw_email, rw_display_name, rw_role_id, rw_locale)
+                VALUES (?, ?, ?, 2, 'en')
+                """, id, prefix + "-" + id + "@riwi.co", prefix + " user");
+        return UserId.of(id);
+    }
+
+    private void setPassword(UserId user, String email, String rawPassword) {
+        JdbcTemplate migrator = PostgresTestSupport.migratorTemplate();
+        migrator.update("UPDATE rw.rw_users SET rw_email = ? WHERE rw_user_id = ?", email, user.value());
+        migrator.update("""
+                INSERT INTO rw.rw_user_credentials (rw_user_id, rw_password_hash, rw_password_algorithm)
+                VALUES (?, ?, 'argon2id')
+                ON CONFLICT (rw_user_id) DO UPDATE SET rw_password_hash = EXCLUDED.rw_password_hash
+                """, user.value(), passwordHasher.hash(rawPassword));
+    }
+
+    private void storeEmbedding(MessageId messageId, float[] vector) {
+        StringBuilder literal = new StringBuilder("[");
+        for (int i = 0; i < vector.length; i++) {
+            if (i > 0) literal.append(',');
+            literal.append(vector[i]);
+        }
+        literal.append(']');
+        PostgresTestSupport.migratorTemplate().update("""
+                INSERT INTO rw.rw_message_embeddings
+                    (rw_message_id, rw_embedding_model_id, rw_embedding, rw_source_revision, rw_content_hash)
+                VALUES (?, 1, ?::vector, 1, sha256(convert_to(?::text, 'UTF8')))
+                ON CONFLICT (rw_message_id) DO UPDATE SET rw_embedding = EXCLUDED.rw_embedding
+                """, messageId.value(), literal.toString(), String.valueOf(messageId.value()));
     }
 }

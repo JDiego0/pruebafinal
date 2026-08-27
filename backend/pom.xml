@@ -20,6 +20,7 @@
   <properties>
     <java.version>21</java.version>
     <archunit.version>1.3.0</archunit.version>
+    <docker.api.version>1.44</docker.api.version>
   </properties>
 
   <dependencies>
@@ -138,7 +139,7 @@
       <dependency>
         <groupId>org.testcontainers</groupId>
         <artifactId>testcontainers-bom</artifactId>
-        <version>1.20.2</version>
+        <version>1.21.3</version>
         <type>pom</type>
         <scope>import</scope>
       </dependency>
@@ -147,6 +148,29 @@
 
   <build>
     <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <!-- The security suite is named *IT because it needs a real
+               PostgreSQL. It is not optional, so `mvn test` runs it. -->
+          <includes>
+            <include>**/*Test.java</include>
+            <include>**/*IT.java</include>
+          </includes>
+          <environmentVariables>
+            <!-- Ryuk (the container reaper) is unreliable on Docker Desktop for
+                 Windows; the suite stops its own container in a shutdown hook. -->
+            <TESTCONTAINERS_RYUK_DISABLED>true</TESTCONTAINERS_RYUK_DISABLED>
+          </environmentVariables>
+          <systemPropertyVariables>
+            <!-- docker-java negotiates down to an API version Docker Engine 25+
+                 no longer accepts; 1.44 is the oldest version those engines
+                 still serve. Harmless on older daemons. -->
+            <api.version>${docker.api.version}</api.version>
+          </systemPropertyVariables>
+        </configuration>
+      </plugin>
       <plugin>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>

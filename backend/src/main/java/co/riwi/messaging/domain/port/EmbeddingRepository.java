@@ -1,23 +1,24 @@
 package co.riwi.messaging.domain.port;
 
 import co.riwi.messaging.domain.model.EmbeddingJob;
-import co.riwi.messaging.domain.model.MessageId;
 
 import java.util.List;
-import java.util.UUID;
 
-/** AI-05, AI-06: manage the embedding job queue and persist vectors. */
+/** AI-05, AI-06: drains the embedding outbox and persists vectors. */
 public interface EmbeddingRepository {
 
-    /** Claim at most {@code batchSize} pending jobs (marks them IN_PROGRESS atomically). */
+    /**
+     * Claims at most {@code batchSize} unprocessed jobs together with the body
+     * to embed. Concurrent workers never claim the same row.
+     */
     List<EmbeddingJob> claimPendingJobs(int batchSize);
 
-    /**
-     * Store the computed vector for a message.
-     * Replaces any existing embedding for the same message.
-     */
-    void storeEmbedding(MessageId messageId, float[] vector, String modelCode, UUID jobId);
+    /** Stores the computed vector and marks the job processed, in one statement. */
+    void storeEmbedding(EmbeddingJob job, float[] vector, short embeddingModelId);
 
-    /** Mark a job as FAILED with an error message. */
-    void markJobFailed(UUID jobId, String error);
+    /** Records a failed attempt so the job can be retried and inspected. */
+    void markJobFailed(long jobId, String error);
+
+    /** Surrogate key of the active embedding model, or null when none is registered. */
+    Short activeEmbeddingModelId(String modelCode);
 }

@@ -8,6 +8,8 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.boot.SpringApplication;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -50,6 +52,7 @@ public class SeedRunner implements ApplicationRunner {
 
     private final NamedParameterJdbcTemplate jdbc;
     private final String seedFilePath;
+    private final ConfigurableApplicationContext context;
 
     // @Qualifier is required here, not cosmetic: rwAppDataSource is @Primary
     // (DataSourceConfig), and Spring's autowiring resolves an unqualified
@@ -60,9 +63,11 @@ public class SeedRunner implements ApplicationRunner {
     // with "permission denied", since rw_app has no INSERT grant on lookup
     // tables) — exactly the kind of defect a code read would not catch.
     public SeedRunner(@Qualifier("rwMigratorDataSource") DataSource rwMigratorDataSource,
-                       @Value("${app.seed.file}") String seedFilePath) {
+                       @Value("${app.seed.file}") String seedFilePath,
+                       ConfigurableApplicationContext context) {
         this.jdbc = new NamedParameterJdbcTemplate(rwMigratorDataSource);
         this.seedFilePath = seedFilePath;
+        this.context = context;
     }
 
     @Override
@@ -90,6 +95,10 @@ public class SeedRunner implements ApplicationRunner {
             log.info("  {} — {} row(s) attempted", table, inserted);
         }
         log.info("Seeding complete.");
+
+        // One-shot: the scheduler AiConfig enables holds non-daemon threads, so
+        // the JVM would otherwise sit idle forever after the seed is loaded.
+        System.exit(SpringApplication.exit(context, () -> 0));
     }
 
     private int insertRows(String table, JsonNode rows) {

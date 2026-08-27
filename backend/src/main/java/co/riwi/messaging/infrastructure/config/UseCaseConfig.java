@@ -156,15 +156,19 @@ public class UseCaseConfig {
             co.riwi.messaging.domain.port.AIProvider aiProvider,
             co.riwi.messaging.domain.port.EmbeddingProvider embeddingProvider,
             co.riwi.messaging.infrastructure.persistence.RagRepositoryJdbc ragRepository,
+            co.riwi.messaging.domain.port.ChannelRepository channelRepository,
             co.riwi.messaging.infrastructure.persistence.CopilotRepositoryJdbc copilotRepository,
             co.riwi.messaging.infrastructure.persistence.SystemPromptRepositoryJdbc systemPromptRepository,
             TransactionRunner transactionRunner,
             @Value("${app.rag.candidate-limit:12}") int candidateLimit,
-            @Value("${app.rag.similarity-floor:0.25}") double similarityFloor
+            @Value("${app.rag.similarity-floor:0.25}") double similarityFloor,
+            @Value("${app.rag.max-context-chars:6000}") int maxContextChars,
+            @Value("${app.ai.provider-code:groq}") String providerCode,
+            @Value("${app.ai.model:llama-3.3-70b-versatile}") String modelCode
     ) {
         return new AskCopilotUseCase(aiProvider, embeddingProvider, ragRepository,
-                copilotRepository, systemPromptRepository, transactionRunner,
-                candidateLimit, similarityFloor);
+                channelRepository, copilotRepository, systemPromptRepository, transactionRunner,
+                candidateLimit, similarityFloor, maxContextChars, providerCode, modelCode);
     }
 
     @Bean

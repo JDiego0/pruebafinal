@@ -156,7 +156,8 @@ public class ChannelsController {
         SendResult result = sendMessageUseCase.execute(actor.userId(), ChannelId.of(channelId),
                 new SendMessageCommand(request.body(), UUID.fromString(request.clientMessageId()), request.parentMessageId()));
         MessageResponse body = new MessageResponse(
-                result.messageId().value(), channelId, actor.userId().toString(), request.parentMessageId(),
+                result.messageId().value(), channelId, actor.userId().toString(),
+                actor.displayName().value(), request.parentMessageId(),
                 request.body(), request.clientMessageId(), false, 1, result.createdAt(), null
         );
         return result.created() ? ResponseEntity.status(HttpStatus.CREATED).body(body) : ResponseEntity.ok(body);

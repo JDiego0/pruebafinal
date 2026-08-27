@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef } from 'react'
-import { authApi } from '@/features/auth/api'
 import type { SseMessageCreated, SseMessageUpdated, SseMessageDeleted } from '@/shared/api/types'
 
 // =============================================================================

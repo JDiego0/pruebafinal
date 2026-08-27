@@ -284,3 +284,50 @@ Full database (schema, constraints, indexes, functions, procedures, views, trigg
 | Horizontal scale-out beyond in-process SSE fan-out | Every instance `LISTEN`s, so it already works; a dedicated broker is unnecessary at this scale. |
 
 Any further cut forced by time or token budget will be recorded here with its `REQUIREMENTS.md` id and reflected in `FINAL_AUDIT.md` as `PARTIAL` or `FAIL` — never silently.
+
+---
+
+## D-22 — Recovery pass: defects found by running the stack, 2026-08-27
+
+**Status:** ACCEPTED
+
+An audit of the "complete" project found that the stack had never actually been run. The
+documentation asserted properties the code could not have had. Every item below was found by
+executing something — Flyway, Maven, `docker compose`, a browser — not by reading it.
+
+### What was broken
+
+| # | Defect | How it was found | Fix |
+|---|--------|------------------|-----|
+| 1 | `V1__extensions_and_roles.sql` contained the literal text `${...}` inside a comment. Flyway resolves placeholders in comments too, so **migration V1 failed on its first statement** and no migration had ever been applied. | `flyway migrate` against a fresh container | Reworded the comment. |
+| 2 | `V16__ai_rag_schema.sql` re-created `rw_system_prompts`, `rw_message_embeddings` and `rw_embedding_jobs` — tables V2 already creates — with unprefixed column names, violating the naming invariant, and with foreign keys to `rw_messages(message_id)`, a column that does not exist. It could never have run. | same run | Deleted. V2/V4/V7/V8/V9 already provide everything it duplicated. |
+| 3 | `RlsSecurityIT` **did not compile**: wrong return types, and it inserted users into columns (`rw_username`) the schema has never had. `mvn test` still passed because surefire's default includes skip `*IT` and a stale `.class` file was on disk. Every `PASS` in `FINAL_AUDIT.md` cited this file as evidence. | `mvn clean test-compile` | Rewritten from scratch against the real API, and surefire now includes `**/*IT.java` so the suite cannot be silently skipped again. |
+| 4 | Both runtime roles were pinned to `search_path = rw, pg_catalog`, which excludes the schema pgvector installs into. Every statement naming the `vector` type from the application failed with `type "vector" does not exist`. | the rewritten RAG test | `V16` now resolves the extension's schema from `pg_extension` and adds it to both roles' `search_path` — correct on Supabase, where extensions live in `extensions`, as well as locally. |
+| 5 | The Phase-9 AI adapters (`RagRepositoryJdbc`, `EmbeddingRepositoryJdbc`, `CopilotRepositoryJdbc`, `SystemPromptRepositoryJdbc`) were written against defect #2's phantom schema. | compiling and running them | Rewritten against the real V2/V4 schema. |
+| 6 | The embedding worker resolved its model id with a plain `SELECT` on an RLS-protected catalogue table, but runs on the scheduler with no actor bound — it read zero rows and the outbox never drained. | worker logs | `V16` adds `rw_fn_active_embedding_model_id`, SECURITY DEFINER, granted to `rw_app`. The worker keeps connecting as `rw_app`; SEC-11 is unchanged. |
+| 7 | `rw_embedding_jobs` was the one table without RLS. | the new `rlsIsEnabledAndForcedEverywhere` test | `V16` enables and forces it with no policy: deny-all for ordinary roles, while the SECURITY DEFINER outbox functions keep working because their owner holds `BYPASSRLS`. |
+| 8 | The seed loader never exited — `@EnableScheduling` holds non-daemon threads — so `docker compose run --rm seed` would hang forever. | running it | `SeedRunner` now exits explicitly once loading completes. |
+| 9 | `discoverPublic` compared a bare parameter against `NULL`, which PostgreSQL cannot type. `GET /channels` returned 500. | driving the API | Added the required `::text` casts. |
+| 10 | Message history returned only `senderId`, so the UI rendered raw UUIDs as author names — and `docs/API.md` documented a sender object. | opening the app in a browser | The history query joins `rw_users` for the display name; it adds a name, never a message the caller could not already read. |
+| 11 | `docker-compose.yml` had no seed step, so a fresh `docker compose up` produced an empty database with no catalogue rows and therefore no working login. | `docker compose up --build` | Added a `seed` service between `migrate` and `backend`, with the corpus bind-mounted. |
+| 12 | `npm run lint` invoked eslint, which was not a dependency and had no config. | running it | Added eslint 9 with a flat config and fixed the five real violations it reported. |
+
+### Consequences accepted
+
+- **Testcontainers pins the Docker API version.** docker-java negotiates a version Docker Engine 25+
+  no longer serves, so surefire passes `-Dapi.version=1.44` — the oldest version modern engines
+  accept, and harmless on older ones. Ryuk is disabled for the same class of reason (unreliable on
+  Docker Desktop for Windows) and the suite stops its own container in a shutdown hook.
+- **`TEST_POSTGRES_URL` escape hatch.** When the JVM cannot reach the Docker socket at all, the
+  security suite targets an external PostgreSQL instead. It still applies the production migrations
+  and still connects as `rw_app`; only where the server comes from changes.
+- **`OUT_OF_SCOPE` is inferred, not declared.** The copilot classifies an answer that cites none of
+  the authorized context as out of scope, rather than asking the model to self-report. That is a
+  heuristic, and it is the conservative direction: it can label a genuinely grounded answer as out
+  of scope, but it cannot label an ungrounded one as answered.
+
+### What this changes about the documentation
+
+`FINAL_AUDIT.md` as previously written was not evidence. Its `PASS` rows cited a test file that did
+not compile and a schema that could not be created. It has been rewritten to state, per requirement,
+what was actually executed. Anything not executed is now marked as such.

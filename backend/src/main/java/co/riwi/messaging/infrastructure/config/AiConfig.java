@@ -85,17 +85,16 @@ public class AiConfig {
     }
 
     // ── Embedding worker ──────────────────────────────────────────────────────
-    // The embedding worker uses the app JdbcTemplate. It sets a special system
-    // actor UUID that has BYPASSRLS effectively via the rw_migrator datasource.
-    // In Docker, the worker shares the app connection and fetches bodies via
-    // the rw_app role (messages visible to rw_app via SECURITY DEFINER select).
+    // The worker connects as rw_app like everything else. It reaches message
+    // bodies only through the SECURITY DEFINER outbox functions in V4/V16, which
+    // is what lets a background job with no actor bound vectorize content.
     @Bean
     public EmbeddingWorker embeddingWorker(
             EmbeddingProvider embeddingProvider,
             EmbeddingRepositoryJdbc embeddingRepository,
-            JdbcTemplate jdbcTemplate,
-            @Value("${app.embedding.model:local-deterministic}") String modelCode
+            @Value("${app.embedding.model-code:deterministic-1536}") String modelCode,
+            @Value("${app.embedding.batch-size:32}") int batchSize
     ) {
-        return new EmbeddingWorker(embeddingProvider, embeddingRepository, jdbcTemplate, modelCode);
+        return new EmbeddingWorker(embeddingProvider, embeddingRepository, modelCode, batchSize);
     }
 }

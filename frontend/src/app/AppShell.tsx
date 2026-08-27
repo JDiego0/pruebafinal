@@ -25,7 +25,7 @@ export function AppShell({ children, rightPanel }: Props) {
   const { channelId } = useParams()
   const navigate = useNavigate()
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [showCopilot, setShowCopilot] = useState(true)
+  const [showCopilot] = useState(true)
 
   async function handleLogout() {
     try { await authApi.logout() } catch { /* ignore */ }

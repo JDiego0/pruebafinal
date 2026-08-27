@@ -478,13 +478,45 @@ None blocks Phase 1 through 13 locally. Details in `README.md` § Human actions.
 
 ---
 
+## Phase 14 — Recovery pass (2026-08-27)
+
+The project was handed over as "complete". It had never been run. `flyway migrate` failed on the
+first statement of V1, so no migration had ever been applied to any database; `V16__ai_rag_schema.sql`
+re-created three tables V2 already owns, with unprefixed columns and a foreign key to a column that
+does not exist; and `RlsSecurityIT` — the file every `PASS` in `FINAL_AUDIT.md` cited as evidence —
+did not compile. `mvn test` reported success because surefire's default includes skip `*IT` and a
+stale class file was still on disk.
+
+All twelve defects, and the reasoning behind each fix, are recorded in `DECISIONS.md` §D-22.
+
+### What is now verified by execution
+
+| Area | Verified how |
+|------|--------------|
+| Migrations | V1..V16 apply cleanly to a fresh `pgvector/pgvector:pg16` |
+| Seed | 8 users, 6 channels, 46 messages loaded, in Docker and standalone |
+| Tests | `./mvnw test` — **16 tests, 0 failures**: 6 ArchUnit + 10 against real PostgreSQL as `rw_app` |
+| RLS isolation | non-member, third-party-DM, search and RAG isolation each proven by querying as the unauthorized user |
+| Authentication | login issues tokens for the right password and raises `AuthenticationFailed` for the wrong one |
+| Messaging | send, history, keyset pagination, edit with history, logical delete — all driven over HTTP |
+| Realtime | SSE stream held open as one user received another user's message live |
+| Search | ranked hits with `<mark>` highlighting, empty for a non-member |
+| Embeddings | outbox drained, 46/46 messages vectorized, 0 pending |
+| Copilot | `NO_PERMISSION` for an unauthorized channel scope, `PROVIDER_ERROR` with no key, usage ledger reads |
+| Frontend | signed in through a browser: conversations, history with sender names, send, copilot panel. `npm run lint` and `npm run build` clean |
+| Docker | `docker compose up --build` from a wiped volume: db → migrate → seed → backend (healthy) → frontend |
+
+### What is not verified
+
+- The live LLM call. Everything before and after it is proven; the call itself needs a Groq API key.
+  Citation intersection has never seen a real model's output.
+- Refresh-token reuse detection. The SQL implements family revocation; no test replays a consumed
+  token yet.
+
+---
+
 ## Next action
 
-Begin **Phase 7** — search: `GET /search/messages` over `rw_fn_search_messages`
-(already built in Phase 3, `SECURITY INVOKER`, `websearch_to_tsquery` +
-`ts_headline`), rank-based keyset cursor (mirrors `MessageCursor`), and the
-`<mark>` highlight contract (`docs/BACKLOG.md` Phase 7). Verify live with
-the seeded `"kryptonite"` fixture — hugo (a member of `incident-response`)
-must get results with correct highlighting; every other seeded user must
-get zero results for the same query, proving `SRCH-02` end to end the same
-way `SEC-01` was proven in Phase 5.
+Set `AI_ENABLED=true` and `AI_API_KEY=gsk_…` in `.env` (README §9), restart the backend, and ask the
+copilot a question about the seeded `proyecto-atlas` corpus. That closes AI-01, AI-02, AI-09..AI-11
+and AI-13 — the last requirements not verified by execution.

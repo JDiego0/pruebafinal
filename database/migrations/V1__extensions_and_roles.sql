@@ -8,7 +8,7 @@
 -- statement, so all subsequent objects are owned by rw_migrator, not by the
 -- bootstrap superuser — this is what makes `FORCE ROW LEVEL SECURITY` meaningful.
 --
--- Passwords are Flyway placeholders (${...}), resolved at migration time from
+-- Passwords are Flyway placeholders, resolved at migration time from
 -- environment variables. No secret literal is ever written to this file (REPO-01).
 
 -- ---------------------------------------------------------------- extensions --

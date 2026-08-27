@@ -47,10 +47,17 @@ app:
     model: ${EMBEDDING_MODEL:}
     api-key: ${EMBEDDING_API_KEY:}
     dimensions: ${EMBEDDING_DIMENSIONS:1536}
+    timeout-seconds: ${EMBEDDING_TIMEOUT_SECONDS:30}
+    batch-size: ${EMBEDDING_BATCH_SIZE:32}
+    worker-delay-ms: ${EMBEDDING_WORKER_DELAY_MS:5000}
+    # Must match a rw_embedding_models.rw_model_code row; the worker stamps this
+    # code on every vector it writes.
+    model-code: ${EMBEDDING_MODEL_CODE:deterministic-1536}
 
   rag:
     candidate-limit: ${RAG_CANDIDATE_LIMIT:12}
     similarity-floor: ${RAG_SIMILARITY_FLOOR:0.25}
+    max-context-chars: ${RAG_MAX_CONTEXT_CHARS:6000}
 
 springdoc:
   api-docs:

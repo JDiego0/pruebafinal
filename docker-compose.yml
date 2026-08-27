@@ -3,62 +3,103 @@ services:
     image: pgvector/pgvector:pg16
     container_name: riwi-messaging-db
     environment:
-      POSTGRES_USER: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-bd_juandiego_garcia_nakamoto}
-      rwMigratorPassword: ${RW_MIGRATOR_PASSWORD:-mig_pass}
-      rwAppPassword: ${RW_APP_PASSWORD:-app_pass}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT_HOST:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d ${POSTGRES_DB:-bd_juandiego_garcia_nakamoto}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-bd_juandiego_garcia_nakamoto}"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
     restart: unless-stopped
 
+  # Applies database/migrations as the bootstrap superuser, which is the only
+  # role permitted to CREATE ROLE. Exits when the schema is at the latest
+  # version; every other service waits for that exit.
   migrate:
     image: flyway/flyway:10.15
     container_name: riwi-messaging-migrate
     depends_on:
       db:
         condition: service_healthy
-    command: -url=jdbc:postgresql://db:5432/${POSTGRES_DB:-bd_juandiego_garcia_nakamoto} -user=postgres -password=${POSTGRES_PASSWORD:-postgres} -placeholders.rwMigratorPassword=${RW_MIGRATOR_PASSWORD:-mig_pass} -placeholders.rwAppPassword=${RW_APP_PASSWORD:-app_pass} migrate
+    command: >
+      -url=jdbc:postgresql://db:5432/${POSTGRES_DB:-bd_juandiego_garcia_nakamoto}
+      -user=${POSTGRES_USER:-postgres}
+      -password=${POSTGRES_PASSWORD:-postgres}
+      -placeholders.rwMigratorPassword=${RW_MIGRATOR_PASSWORD:-mig_pass}
+      -placeholders.rwAppPassword=${RW_APP_PASSWORD:-app_pass}
+      -connectRetries=10
+      migrate
     volumes:
-      - ./database/migrations:/flyway/sql
+      - ./database/migrations:/flyway/sql:ro
+
+  # One-shot corpus loader. Same image as the backend, started with the `seed`
+  # profile, connecting as rw_migrator (the running backend never can).
+  # Idempotent: re-running it against a seeded database inserts nothing.
+  seed:
+    build:
+      context: ./backend
+    container_name: riwi-messaging-seed
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-bd_juandiego_garcia_nakamoto}
+      RW_APP_USER: rw_app
+      RW_APP_PASSWORD: ${RW_APP_PASSWORD:-app_pass}
+      RW_MIGRATOR_USER: rw_migrator
+      RW_MIGRATOR_PASSWORD: ${RW_MIGRATOR_PASSWORD:-mig_pass}
+      JWT_SECRET: ${JWT_SECRET:-ZGV2LW9ubHktc2VjcmV0LXJlcGxhY2UtbWUtaW4tZXZlcnktcmVhbC1lbnZpcm9ubWVudA==}
+      SEED_FILE: /seed/seed.json
+      SPRING_PROFILES_ACTIVE: seed
+    volumes:
+      - ./database/seeds:/seed:ro
+    restart: "no"
 
   backend:
     build:
       context: ./backend
     container_name: riwi-messaging-backend
     depends_on:
-      migrate:
+      seed:
         condition: service_completed_successfully
     environment:
-      - POSTGRES_HOST=db
-      - POSTGRES_PORT=5432
-      - POSTGRES_DB=${POSTGRES_DB:-bd_juandiego_garcia_nakamoto}
-      - RW_APP_USER=rw_app
-      - RW_APP_PASSWORD=${RW_APP_PASSWORD:-app_pass}
-      - RW_MIGRATOR_USER=rw_migrator
-      - RW_MIGRATOR_PASSWORD=${RW_MIGRATOR_PASSWORD:-mig_pass}
-      - JWT_SECRET=${JWT_SECRET:-dGhpcy1pcy1hLWR1bW15LXNlY3JldC1rZXktdGhhdC1pcy1hdC1sZWFzdC0yNTYtYml0cy1sb25n}
-      - AI_ENABLED=${AI_ENABLED:-true}
-      - AI_PROVIDER_CODE=${AI_PROVIDER_CODE:-groq}
-      - AI_BASE_URL=${AI_BASE_URL:-https://api.groq.com/openai/v1}
-      - AI_MODEL=${AI_MODEL:-llama-3.3-70b-versatile}
-      - AI_API_KEY=${AI_API_KEY:-}
-      - EMBEDDING_PROVIDER_CODE=${EMBEDDING_PROVIDER_CODE:-local}
-      - EMBEDDING_API_KEY=${EMBEDDING_API_KEY:-}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-bd_juandiego_garcia_nakamoto}
+      # The running application connects ONLY as rw_app (NOSUPERUSER, NOBYPASSRLS).
+      RW_APP_USER: rw_app
+      RW_APP_PASSWORD: ${RW_APP_PASSWORD:-app_pass}
+      JWT_SECRET: ${JWT_SECRET:-ZGV2LW9ubHktc2VjcmV0LXJlcGxhY2UtbWUtaW4tZXZlcnktcmVhbC1lbnZpcm9ubWVudA==}
+      JWT_ACCESS_TOKEN_TTL_SECONDS: ${JWT_ACCESS_TOKEN_TTL_SECONDS:-900}
+      REFRESH_TOKEN_TTL_SECONDS: ${REFRESH_TOKEN_TTL_SECONDS:-1209600}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:8081}
+      AI_ENABLED: ${AI_ENABLED:-false}
+      AI_PROVIDER_CODE: ${AI_PROVIDER_CODE:-groq}
+      AI_BASE_URL: ${AI_BASE_URL:-https://api.groq.com/openai/v1}
+      AI_MODEL: ${AI_MODEL:-llama-3.3-70b-versatile}
+      AI_API_KEY: ${AI_API_KEY:-}
+      EMBEDDING_PROVIDER_CODE: ${EMBEDDING_PROVIDER_CODE:-local}
+      EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+      RAG_CANDIDATE_LIMIT: ${RAG_CANDIDATE_LIMIT:-12}
+      RAG_SIMILARITY_FLOOR: ${RAG_SIMILARITY_FLOOR:-0.25}
     ports:
-      - "8080:8080"
+      - "${BACKEND_PORT:-8080}:8080"
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/api/v1/health"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 12
+      start_period: 30s
     restart: unless-stopped
 
   frontend:
@@ -69,7 +110,7 @@ services:
       backend:
         condition: service_healthy
     ports:
-      - "80:80"
+      - "${FRONTEND_PORT:-8081}:80"
     restart: unless-stopped
 
 volumes:

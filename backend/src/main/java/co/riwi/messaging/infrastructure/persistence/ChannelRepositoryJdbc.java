@@ -57,7 +57,9 @@ public class ChannelRepositoryJdbc implements ChannelRepository {
         // WHERE clause here narrows further, it does not widen.
         return jdbc.query(SELECT_BASE +
                         "WHERE ct.rw_channel_type_code = 'PUBLIC' AND NOT c.rw_is_archived " +
-                        "AND (? IS NULL OR ? = '' OR c.rw_name ILIKE '%' || ? || '%') " +
+                        // The casts are required: PostgreSQL cannot infer a type
+                        // for a bare parameter compared only against NULL.
+                        "AND (?::text IS NULL OR ?::text = '' OR c.rw_name ILIKE '%' || ?::text || '%') " +
                         "ORDER BY c.rw_name",
                 CHANNEL_MAPPER, search, search, search);
     }

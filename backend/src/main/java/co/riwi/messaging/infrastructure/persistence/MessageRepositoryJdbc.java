@@ -22,9 +22,14 @@ public class MessageRepositoryJdbc implements MessageRepository {
     @Override
     public List<MessageRecord> history(ChannelId channelId, Instant beforeCreatedAt, MessageId beforeMessageId, int limit) {
         return jdbc.query(
-                "SELECT rw_message_id, rw_channel_id, rw_sender_id, rw_parent_message_id, rw_body, " +
-                        "rw_client_message_id, rw_is_deleted, rw_revision, rw_created_at, rw_edited_at " +
-                        "FROM rw.rw_fn_message_history(?, ?, ?, ?)",
+                // The join is on rw_users, which RLS exposes to any authenticated
+                // actor as directory data — it adds a display name, never a
+                // message the caller could not already read.
+                "SELECT h.rw_message_id, h.rw_channel_id, h.rw_sender_id, u.rw_display_name, " +
+                        "h.rw_parent_message_id, h.rw_body, h.rw_client_message_id, h.rw_is_deleted, " +
+                        "h.rw_revision, h.rw_created_at, h.rw_edited_at " +
+                        "FROM rw.rw_fn_message_history(?, ?, ?, ?) h " +
+                        "LEFT JOIN rw.rw_users u ON u.rw_user_id = h.rw_sender_id",
                 (rs, rowNum) -> {
                     Timestamp editedAt = rs.getTimestamp("rw_edited_at");
                     Object parent = rs.getObject("rw_parent_message_id");
@@ -32,6 +37,7 @@ public class MessageRepositoryJdbc implements MessageRepository {
                             MessageId.of(rs.getLong("rw_message_id")),
                             ChannelId.of((UUID) rs.getObject("rw_channel_id")),
                             UserId.of((UUID) rs.getObject("rw_sender_id")),
+                            rs.getString("rw_display_name"),
                             parent == null ? null : MessageId.of(((Number) parent).longValue()),
                             rs.getString("rw_body"),
                             (UUID) rs.getObject("rw_client_message_id"),

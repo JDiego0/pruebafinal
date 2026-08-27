@@ -1,6 +1,5 @@
 import {
   useCallback,
-  useEffect,
   useLayoutEffect,
   useRef,
   useState,
@@ -212,7 +211,9 @@ export function MessageList({ channelId }: { channelId: string }) {
       .filter((sm) => !optimistic.some((o) => o.clientMessageId === sm.clientMessageId && o.status === 'sent'))
       .map((m) => ({
         ...m,
-        senderDisplayName: m.senderId === user?.userId ? (user?.displayName ?? '') : m.senderId,
+        senderDisplayName:
+          m.senderDisplayName ??
+          (m.senderId === user?.userId ? (user?.displayName ?? '') : m.senderId),
         senderAvatarUrl: null,
         status: 'sent' as const,
       })),

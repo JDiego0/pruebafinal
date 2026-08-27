@@ -15,10 +15,12 @@ export const conversationsApi = {
       })
       .then((r) => r.data),
 
+  // GET /channels and GET /channels/{id}/members answer with a bare array —
+  // they are bounded lists, not keyset pages.
   discoverChannels: (query?: string) =>
     apiClient
-      .get<PagedResponse<ChannelDetail>>('/channels', {
-        params: { type: 'PUBLIC', query, limit: 50 },
+      .get<ChannelDetail[]>('/channels', {
+        params: { type: 'PUBLIC', query },
       })
       .then((r) => r.data),
 
@@ -40,7 +42,7 @@ export const conversationsApi = {
 
   getMembers: (channelId: string) =>
     apiClient
-      .get<PagedResponse<ChannelMember>>(`/channels/${channelId}/members`)
+      .get<ChannelMember[]>(`/channels/${channelId}/members`)
       .then((r) => r.data),
 
   joinChannel: (channelId: string) =>

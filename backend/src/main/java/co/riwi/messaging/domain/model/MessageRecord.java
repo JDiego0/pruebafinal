@@ -11,6 +11,7 @@ public record MessageRecord(
         MessageId messageId,
         ChannelId channelId,
         UserId senderId,
+        String senderDisplayName,
         MessageId parentMessageId,
         String body,
         UUID clientMessageId,

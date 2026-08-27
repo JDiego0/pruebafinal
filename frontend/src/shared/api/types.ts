@@ -120,6 +120,7 @@ export interface MessageRecord {
   messageId: number
   channelId: string
   senderId: string
+  senderDisplayName: string | null
   parentMessageId: number | null
   body: string | null
   clientMessageId: string
