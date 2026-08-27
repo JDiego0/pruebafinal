@@ -1,0 +1,70 @@
+{
+  "auth": {
+    "login": "Iniciar Sesión",
+    "subtitle": "Plataforma de mensajería Riwi",
+    "email": "Correo electrónico",
+    "password": "Contraseña",
+    "loginButton": "Entrar",
+    "invalidCredentials": "Credenciales inválidas. Verifica tu correo y contraseña.",
+    "logout": "Cerrar sesión"
+  },
+  "conversations": {
+    "title": "Conversaciones",
+    "noConversations": "No tienes conversaciones aún",
+    "search": "Buscar conversaciones..."
+  },
+  "messages": {
+    "placeholder": "Escribe un mensaje... (Enter para enviar)",
+    "send": "Enviar",
+    "edit": "Editar",
+    "delete": "Eliminar",
+    "edited": "editado",
+    "deleted": "Mensaje eliminado",
+    "pending": "Enviando...",
+    "failed": "Error al enviar",
+    "retry": "Reintentar",
+    "loadMore": "Cargar más",
+    "noMessages": "No hay mensajes en esta conversación. ¡Sé el primero en escribir!",
+    "beginningOfHistory": "Inicio del historial"
+  },
+  "copilot": {
+    "title": "Copiloto AI",
+    "askPlaceholder": "Pregunta algo sobre esta conversación...",
+    "ask": "Preguntar",
+    "thinking": "Pensando...",
+    "noAnswer": "Haz una pregunta para empezar",
+    "insufficientContext": "No hay suficiente contexto en los mensajes autorizados para responder esta pregunta.",
+    "noPermission": "No tienes permisos para acceder al contexto solicitado.",
+    "outOfScope": "Esta pregunta está fuera del alcance de la plataforma de mensajería.",
+    "providerUnavailable": "El proveedor de AI no está disponible en este momento.",
+    "citations": "Fuentes citadas",
+    "tokens": "tokens",
+    "usage": "Uso del copiloto"
+  },
+  "profile": {
+    "title": "Mi Perfil",
+    "displayName": "Nombre visible",
+    "email": "Correo electrónico",
+    "role": "Rol",
+    "locale": "Idioma preferido",
+    "save": "Guardar cambios",
+    "saved": "¡Guardado!"
+  },
+  "search": {
+    "title": "Buscar mensajes",
+    "placeholder": "Busca en los mensajes de este canal...",
+    "noResults": "Sin resultados para esta búsqueda",
+    "prompt": "Escribe una búsqueda para comenzar"
+  },
+  "common": {
+    "loading": "Cargando...",
+    "error": "Ocurrió un error",
+    "retry": "Reintentar",
+    "cancel": "Cancelar",
+    "confirm": "Confirmar",
+    "close": "Cerrar",
+    "back": "Volver",
+    "menu": "Menú",
+    "search": "Buscar"
+  }
+}

@@ -1,0 +1,70 @@
+{
+  "auth": {
+    "login": "Sign In",
+    "subtitle": "Riwi Messaging Platform",
+    "email": "Email address",
+    "password": "Password",
+    "loginButton": "Sign in",
+    "invalidCredentials": "Invalid credentials. Check your email and password.",
+    "logout": "Sign out"
+  },
+  "conversations": {
+    "title": "Conversations",
+    "noConversations": "No conversations yet",
+    "search": "Search conversations..."
+  },
+  "messages": {
+    "placeholder": "Type a message... (Enter to send)",
+    "send": "Send",
+    "edit": "Edit",
+    "delete": "Delete",
+    "edited": "edited",
+    "deleted": "Message deleted",
+    "pending": "Sending...",
+    "failed": "Failed to send",
+    "retry": "Retry",
+    "loadMore": "Load more",
+    "noMessages": "No messages in this conversation. Be the first to write!",
+    "beginningOfHistory": "Beginning of conversation history"
+  },
+  "copilot": {
+    "title": "AI Copilot",
+    "askPlaceholder": "Ask something about this conversation...",
+    "ask": "Ask",
+    "thinking": "Thinking...",
+    "noAnswer": "Ask a question to get started",
+    "insufficientContext": "There is not enough context in the authorized messages to answer this question.",
+    "noPermission": "You don't have permission to access the requested context.",
+    "outOfScope": "This question is outside the scope of the messaging platform.",
+    "providerUnavailable": "The AI provider is currently unavailable.",
+    "citations": "Cited sources",
+    "tokens": "tokens",
+    "usage": "Copilot usage"
+  },
+  "profile": {
+    "title": "My Profile",
+    "displayName": "Display name",
+    "email": "Email address",
+    "role": "Role",
+    "locale": "Preferred language",
+    "save": "Save changes",
+    "saved": "Saved!"
+  },
+  "search": {
+    "title": "Search messages",
+    "placeholder": "Search messages in this channel...",
+    "noResults": "No results for this search",
+    "prompt": "Type a search to get started"
+  },
+  "common": {
+    "loading": "Loading...",
+    "error": "An error occurred",
+    "retry": "Retry",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "close": "Close",
+    "back": "Back",
+    "menu": "Menu",
+    "search": "Search"
+  }
+}

@@ -3,7 +3,7 @@
 Living state of the project. Updated at the end of every phase.
 Plan: `docs/BACKLOG.md` · Acceptance: `REQUIREMENTS.md` · Rationale: `DECISIONS.md`
 
-**Current phase:** 6 — complete. Beginning Phase 7 (search).
+**Current phase:** 8 — complete. Beginning Phase 9 (AI RAG and embeddings).
 **Last updated:** 2026-08-27
 
 > **Amendment (2026-08-27).** MVP chat provider is **Groq**, not xAI/Grok. Groq is OpenAI-compatible, so the adapter is unchanged — but Groq publishes **no embedding models**, so chat and embeddings are now configured as two independent providers. Recorded as `DECISIONS.md` D-21 and requirement `AI-16`. No change to the schema, the RLS model, the retrieval order or any security property.
@@ -21,9 +21,9 @@ Plan: `docs/BACKLOG.md` · Acceptance: `REQUIREMENTS.md` · Rationale: `DECISION
 | 4 | Authentication | ✅ done | full backend skeleton, auth + users endpoints verified live end-to-end |
 | 5 | Messaging REST API | ✅ done | 17 endpoints, all verified live across 6 users |
 | 6 | Realtime (SSE + LISTEN/NOTIFY) | ✅ done | verified live with 2 concurrent SSE connections, membership-filtered fan-out proven |
-| 7 | Search | ⏸ not started | |
-| 8 | Frontend | ⏸ not started | |
-| 9 | AI RAG and embeddings | ⏸ not started | |
+| 7 | Search | ✅ done | GET /search/messages over rw_fn_search_messages, rank keyset cursor |
+| 8 | Frontend | ✅ done | React 19 + Vite + Tailwind v4, all features, TypeScript build passes |
+| 9 | AI RAG and embeddings | 🔄 in progress | |
 | 10 | Security testing | ⏸ not started | Opus — the two mandatory tests |
 | 11 | Docker | ⏸ not started | |
 | 12 | Documentation | ⏸ not started | |
