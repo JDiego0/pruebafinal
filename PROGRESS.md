@@ -23,8 +23,8 @@ Plan: `docs/BACKLOG.md` · Acceptance: `REQUIREMENTS.md` · Rationale: `DECISION
 | 6 | Realtime (SSE + LISTEN/NOTIFY) | ✅ done | verified live with 2 concurrent SSE connections, membership-filtered fan-out proven |
 | 7 | Search | ✅ done | GET /search/messages over rw_fn_search_messages, rank keyset cursor |
 | 8 | Frontend | ✅ done | React 19 + Vite + Tailwind v4, all features, TypeScript build passes |
-| 9 | AI RAG and embeddings | 🔄 in progress | |
-| 10 | Security testing | ⏸ not started | Opus — the two mandatory tests |
+| 9 | AI RAG and embeddings | ✅ done | DeterministicLocalEmbeddingProvider, OpenAI-compat adapters, AskCopilotUseCase, V16 migration |
+| 10 | Security testing | 🔄 in progress | |
 | 11 | Docker | ⏸ not started | |
 | 12 | Documentation | ⏸ not started | |
 | 13 | Final audit | ⏸ not started | Opus — produces `FINAL_AUDIT.md` |

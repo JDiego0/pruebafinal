@@ -150,4 +150,28 @@ public class UseCaseConfig {
     public SearchMessagesUseCase searchMessagesUseCase(MessageSearchRepository searchRepository, TransactionRunner transactionRunner) {
         return new SearchMessagesUseCase(searchRepository, transactionRunner);
     }
+
+    @Bean
+    public AskCopilotUseCase askCopilotUseCase(
+            co.riwi.messaging.domain.port.AIProvider aiProvider,
+            co.riwi.messaging.domain.port.EmbeddingProvider embeddingProvider,
+            co.riwi.messaging.infrastructure.persistence.RagRepositoryJdbc ragRepository,
+            co.riwi.messaging.infrastructure.persistence.CopilotRepositoryJdbc copilotRepository,
+            co.riwi.messaging.infrastructure.persistence.SystemPromptRepositoryJdbc systemPromptRepository,
+            TransactionRunner transactionRunner,
+            @Value("${app.rag.candidate-limit:12}") int candidateLimit,
+            @Value("${app.rag.similarity-floor:0.25}") double similarityFloor
+    ) {
+        return new AskCopilotUseCase(aiProvider, embeddingProvider, ragRepository,
+                copilotRepository, systemPromptRepository, transactionRunner,
+                candidateLimit, similarityFloor);
+    }
+
+    @Bean
+    public GetCopilotUsageUseCase getCopilotUsageUseCase(
+            co.riwi.messaging.infrastructure.persistence.CopilotRepositoryJdbc copilotRepository,
+            TransactionRunner transactionRunner
+    ) {
+        return new GetCopilotUsageUseCase(copilotRepository, transactionRunner);
+    }
 }
