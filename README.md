@@ -162,7 +162,7 @@ Every variable lives in `.env.example`, already documented inline. The ones that
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` | `postgres` / `postgres` | bootstrap superuser, used only to create roles and migrate |
 | `RW_MIGRATOR_PASSWORD` | `mig_pass` | password for the schema-owning role |
 | `RW_APP_PASSWORD` | `app_pass` | password for the runtime role |
-| `JWT_SECRET` | dev-only literal | base64 secret for HS512 access tokens — **replace in any real environment** |
+| `JWT_SECRET` | dev-only literal | HMAC secret for access tokens; the algorithm (HS256/384/512) follows its length — **replace in any real environment** |
 | `JWT_ACCESS_TOKEN_TTL_SECONDS` | `900` | access-token lifetime (15 min) |
 | `REFRESH_TOKEN_TTL_SECONDS` | `1209600` | refresh-token lifetime (14 days) |
 | `COOKIE_SECURE` | `false` | set `true` when serving over HTTPS |
@@ -456,11 +456,11 @@ cd backend
 ./mvnw test
 ```
 
-This runs both suites — 17 tests:
+This runs both suites — 18 tests:
 
 - **`ArchitectureTest`** (6) — ArchUnit. Proves `domain` imports no framework, and that the
   dependency direction `presentation → application → domain ← infrastructure` holds.
-- **`RlsSecurityIT`** (11) — the PostgreSQL security suite, below.
+- **`RlsSecurityIT`** (12) — the PostgreSQL security suite, below.
 
 ### Database security tests
 
@@ -481,6 +481,7 @@ migrations to it, and connects the application as `rw_app` exactly as production
 | `editDeleteAndKeysetPagination` | edit bumps the revision and writes history, delete is a tombstone with the row still present, keyset pages do not overlap |
 | `rlsIsEnabledAndForcedEverywhere` | every table in the `rw` schema has RLS **enabled and forced** — no exception list |
 | `ragRetrievalRanksByMeaningAndStillRefusesOutsiders` | a question that matches neither message verbatim retrieves both for the member and only the public one for the outsider |
+| `refreshTokenReuseIsDetectedAndRevokesTheFamily` | replaying a consumed refresh token is refused, and detection revokes the whole family so the successor stops working too |
 
 Run just that suite:
 
@@ -508,7 +509,7 @@ POST /auth/login  { email, password }
    │  Argon2id verify against rw_user_credentials (SECURITY DEFINER lookup,
    │  constant work regardless of whether the email exists)
    ▼
-   ├─ access token   HS512 JWT, 15 min, returned in the JSON body
+   ├─ access token   HMAC JWT, 15 min, returned in the JSON body
    └─ refresh token  opaque 256-bit random, 14 days,
                      HttpOnly + SameSite=Strict cookie scoped to /api/v1/auth,
                      stored only as a SHA-256 hash

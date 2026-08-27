@@ -11,6 +11,7 @@ import co.riwi.messaging.application.usecase.GetMessageHistoryUseCase;
 import co.riwi.messaging.application.usecase.JoinChannelUseCase;
 import co.riwi.messaging.application.usecase.LoginUseCase;
 import co.riwi.messaging.application.usecase.OpenDirectChannelUseCase;
+import co.riwi.messaging.application.usecase.RefreshSessionUseCase;
 import co.riwi.messaging.application.usecase.SearchMessagesUseCase;
 import co.riwi.messaging.application.usecase.SendMessageUseCase;
 import co.riwi.messaging.domain.error.AuthenticationFailed;
@@ -86,6 +87,7 @@ class RlsSecurityIT {
     @Autowired GetMessageHistoryUseCase getMessageHistoryUseCase;
     @Autowired SearchMessagesUseCase searchMessagesUseCase;
     @Autowired LoginUseCase loginUseCase;
+    @Autowired RefreshSessionUseCase refreshSessionUseCase;
 
     // ── SEC-01 ───────────────────────────────────────────────────────────────
 
@@ -291,6 +293,46 @@ class RlsSecurityIT {
         assertThatThrownBy(() -> loginUseCase.execute(
                 new LoginCommand(email, "wrong-password", "junit", "127.0.0.1")))
                 .isInstanceOf(AuthenticationFailed.class);
+    }
+
+    // ── AUTH-05, AUTH-06 ─────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("TEST-13: replaying a consumed refresh token is refused and burns the whole family")
+    void refreshTokenReuseIsDetectedAndRevokesTheFamily() {
+        UserId user = createUser("refresh");
+        String email = "refresh-" + user.value() + "@riwi.co";
+        setPassword(user, email, "Correct-Horse-Battery-9");
+
+        SessionResult first = loginUseCase.execute(
+                new LoginCommand(email, "Correct-Horse-Battery-9", "junit", "127.0.0.1"));
+        String originalRefreshToken = first.rawRefreshToken();
+
+        // Normal rotation: the original token is consumed, a successor is issued.
+        SessionResult rotated = refreshSessionUseCase.execute(originalRefreshToken, "junit", "127.0.0.1");
+        assertThat(rotated.rawRefreshToken()).isNotBlank().isNotEqualTo(originalRefreshToken);
+
+        // Replaying the consumed token is what a stolen token looks like.
+        assertThatThrownBy(() -> refreshSessionUseCase.execute(originalRefreshToken, "junit", "127.0.0.1"))
+                .isInstanceOf(AuthenticationFailed.class);
+
+        // AUTH-06: detection burns the family, so the successor the legitimate
+        // client is holding stops working too — the point is to end the session,
+        // not just to refuse one token.
+        assertThatThrownBy(() -> refreshSessionUseCase.execute(rotated.rawRefreshToken(), "junit", "127.0.0.1"))
+                .isInstanceOf(AuthenticationFailed.class);
+
+        JdbcTemplate migrator = PostgresTestSupport.migratorTemplate();
+        Integer live = migrator.queryForObject("""
+                SELECT count(*) FROM rw.rw_refresh_tokens
+                WHERE rw_user_id = ? AND rw_revoked_at IS NULL
+                """, Integer.class, user.value());
+        assertThat(live).as("no live token may survive reuse detection").isZero();
+
+        List<String> reasons = migrator.queryForList("""
+                SELECT DISTINCT rw_revoked_reason FROM rw.rw_refresh_tokens WHERE rw_user_id = ?
+                """, String.class, user.value());
+        assertThat(reasons).contains("REUSE_DETECTED");
     }
 
     // ── MSG-02, MSG-04 ───────────────────────────────────────────────────────

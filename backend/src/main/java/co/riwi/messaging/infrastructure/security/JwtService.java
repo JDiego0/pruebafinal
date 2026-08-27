@@ -20,7 +20,10 @@ import java.util.Date;
 import java.util.UUID;
 
 /**
- * AUTH-02/AUTH-03: HS256 access tokens, 15-minute default lifetime. The
+ * AUTH-02/AUTH-03: HMAC-signed access tokens, 15-minute default lifetime.
+ * The exact algorithm follows the key length JWT_SECRET supplies — HS256,
+ * HS384 or HS512 — and a secret too short for any of them is rejected at
+ * startup rather than silently weakening the signature. The
  * token carries claims for convenience only — anything security-relevant
  * (role, active status) is re-read from the database by whichever use case
  * needs it; the claim is never trusted as the sole source of truth for an

@@ -548,8 +548,9 @@ retrieved for him at similarity 1.000 — its instructions sit in his prompt —
 nothing, because the database never returned messages 35 and 36 to him. There is nothing in the
 context to reveal.
 
-Test suite now **17 tests, 0 failures**, including a retrieval test that ranks a non-identical
-question and still refuses the outsider.
+Test suite now **18 tests, 0 failures**, including a retrieval test that ranks a non-identical
+question and still refuses the outsider, and a reuse-detection test that replays a consumed refresh
+token.
 
 ---
 
@@ -557,6 +558,5 @@ question and still refuses the outsider.
 
 None outstanding. The MVP is complete and verified end to end.
 
-Optional hardening, in priority order: a test that replays a consumed refresh token to prove family
-revocation; HTTP-level integration tests (TEST-12); a hosted embedding provider for better recall
-than lexical matching gives (README §10).
+Optional hardening, in priority order: HTTP-level integration tests (TEST-12); a hosted embedding
+provider for better recall than lexical matching gives (README §10).

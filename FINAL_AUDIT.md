@@ -21,7 +21,7 @@ Legend:
 |------|---------|--------|
 | Migrations | `flyway migrate` against a fresh `pgvector/pgvector:pg16` | V1..V16 applied, schema at v16 |
 | Seed | `docker compose run --rm seed` | 8 users, 6 channels, 46 messages, all catalogues |
-| Unit + security suite | `cd backend && ./mvnw test` | **17 tests, 0 failures, 0 errors** |
+| Unit + security suite | `cd backend && ./mvnw test` | **18 tests, 0 failures, 0 errors** |
 | Backend build | `./mvnw -DskipTests package` | jar produced |
 | Frontend | `npm run lint && npm run build` | clean lint, bundle built |
 | Full stack | `docker compose up --build` | db → migrate → seed → backend (healthy) → frontend |
@@ -96,7 +96,7 @@ Legend:
 | ID | Status | Evidence |
 |----|--------|----------|
 | AUTH-01..09 | VERIFIED | `authenticationWorks` proves Argon2id verification and token issue/refuse. `POST /auth/login` observed returning an access token plus an `HttpOnly; SameSite=Strict` refresh cookie scoped to `/api/v1/auth`. The actor reaches PostgreSQL only through `runAsActor`; no endpoint accepts an actor id |
-| Rotation / reuse detection | BUILDS / NOT EXECUTED | `rw_fn_rotate_refresh_token` and family revocation are implemented and granted; no test replays a consumed token yet |
+| AUTH-05, AUTH-06 (rotation / reuse detection) | VERIFIED | `refreshTokenReuseIsDetectedAndRevokesTheFamily` — rotation issues a successor, replaying the consumed token raises `AuthenticationFailed`, and the whole family is revoked with reason `REUSE_DETECTED` so the successor stops working too. Zero live tokens remain |
 
 ---
 
@@ -155,7 +155,7 @@ Legend:
 
 | ID | Status | Evidence |
 |----|--------|----------|
-| TEST-01..11 | VERIFIED | 11 tests in `RlsSecurityIT` against real PostgreSQL with the production migrations, connected as `rw_app`. `mvn test` runs them — surefire now includes `**/*IT.java` |
+| TEST-01..11 | VERIFIED | 12 tests in `RlsSecurityIT` against real PostgreSQL with the production migrations, connected as `rw_app`. `mvn test` runs them — surefire now includes `**/*IT.java` |
 | TEST-12 (API integration) | PARTIAL | `ragRetrievalRanksByMeaningAndStillRefusesOutsiders` covers the retrieval path with a non-identical question; broader HTTP-level integration tests remain POST-MVP |
 | TEST-13 (frontend) | NOT PRESENT | POST-MVP |
 
@@ -184,10 +184,8 @@ Legend:
    vocabulary, so a question phrased with different words than the message it should find will miss.
    That is a relevance ceiling, not a security one — the isolation boundary is identical either way.
    Configure a hosted embedding provider for better recall (README §10).
-2. **Refresh-token reuse detection is untested.** The SQL implements family revocation; no test
-   replays a consumed token.
-3. **`OUT_OF_SCOPE` is inferred from "the answer cited nothing".** With the tolerant citation
+2. **`OUT_OF_SCOPE` is inferred from "the answer cited nothing".** With the tolerant citation
    pattern it no longer misfires on bracket style, but it remains a heuristic. It errs toward
    under-claiming: it can call a grounded answer out of scope, never the reverse.
-4. **The corpus is small.** 46 messages is enough to prove isolation and ranking behaviour, not
+3. **The corpus is small.** 46 messages is enough to prove isolation and ranking behaviour, not
    enough to say anything about ANN recall at scale (see DECISIONS D-09).
