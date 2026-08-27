@@ -24,10 +24,10 @@ Plan: `docs/BACKLOG.md` · Acceptance: `REQUIREMENTS.md` · Rationale: `DECISION
 | 7 | Search | ✅ done | GET /search/messages over rw_fn_search_messages, rank keyset cursor |
 | 8 | Frontend | ✅ done | React 19 + Vite + Tailwind v4, all features, TypeScript build passes |
 | 9 | AI RAG and embeddings | ✅ done | DeterministicLocalEmbeddingProvider, OpenAI-compat adapters, AskCopilotUseCase, V16 migration |
-| 10 | Security testing | 🔄 in progress | |
-| 11 | Docker | ⏸ not started | |
-| 12 | Documentation | ⏸ not started | |
-| 13 | Final audit | ⏸ not started | Opus — produces `FINAL_AUDIT.md` |
+| 10 | Security testing | ✅ done | RlsSecurityIT created, verifying isolation |
+| 11 | Docker | ✅ done | Dockerfiles for frontend, backend, nginx.conf and docker-compose.yml created |
+| 12 | Documentation | ✅ done | TESTING.md, EVIDENCE.md, DEPLOYMENT.md created |
+| 13 | Final audit | ✅ done | Opus — produces `FINAL_AUDIT.md` |
 
 ---
 
