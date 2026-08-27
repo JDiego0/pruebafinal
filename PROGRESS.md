@@ -3,7 +3,7 @@
 Living state of the project. Updated at the end of every phase.
 Plan: `docs/BACKLOG.md` · Acceptance: `REQUIREMENTS.md` · Rationale: `DECISIONS.md`
 
-**Current phase:** 2 — complete. Beginning Phase 3 (functions, procedures, views, triggers, RLS).
+**Current phase:** 3 — complete. Beginning Phase 4 (authentication, Spring Boot skeleton).
 **Last updated:** 2026-08-27
 
 > **Amendment (2026-08-27).** MVP chat provider is **Groq**, not xAI/Grok. Groq is OpenAI-compatible, so the adapter is unchanged — but Groq publishes **no embedding models**, so chat and embeddings are now configured as two independent providers. Recorded as `DECISIONS.md` D-21 and requirement `AI-16`. No change to the schema, the RLS model, the retrieval order or any security property.
@@ -17,7 +17,7 @@ Plan: `docs/BACKLOG.md` · Acceptance: `REQUIREMENTS.md` · Rationale: `DECISION
 | 0 | Initialization | ✅ done | Requirements, architecture, ER + 3NF, security model, API contract, backlog |
 | 1 | Business corpus, seed, ER render | ✅ done | seed.json validated, ER embedded in DATA_MODEL.md; standalone SVG blocked locally (see note) |
 | 2 | PostgreSQL schema | ✅ done | 20 tables, migrations verified against a live pgvector/pg16 container |
-| 3 | Functions, procedures, views, triggers, RLS | ⏸ not started | Opus — security critical |
+| 3 | Functions, procedures, views, triggers, RLS | ✅ done | 6 migration files, verified live as rw_app; 3 real bugs found and fixed |
 | 4 | Authentication | ⏸ not started | |
 | 5 | Messaging REST API | ⏸ not started | |
 | 6 | Realtime (SSE + LISTEN/NOTIFY) | ⏸ not started | |
@@ -82,6 +82,86 @@ a standalone image file.
 
 ---
 
+## Delivered in Phase 3
+
+```
+database/migrations/V4__functions.sql    ~25 functions: actor, RLS recursion
+                                          breakers, message history/search/RAG/
+                                          usage-summary, send/edit/soft-delete,
+                                          channel join/leave/remove/update/
+                                          create, direct-channel open, auth
+                                          (credential, refresh rotation), the
+                                          embedding-worker's 3 functions
+database/migrations/V5__procedures.sql   rw_sp_query_users (OBJ-01),
+                                          rw_sp_modify_user (OBJ-02)
+database/migrations/V6__views.sql        rw_v_user_conversations (OBJ-03)
+database/migrations/V7__triggers.sql     updated_at, block-delete, edit-history,
+                                          embedding invalidation + pg_notify,
+                                          last-owner guard, direct-channel guard
+database/migrations/V8__rls.sql          ENABLE + FORCE on every content table,
+                                          every policy from SECURITY_MODEL.md §4
+database/migrations/V9__grants.sql       rw_app's complete privilege surface:
+                                          column-scoped UPDATEs, zero DELETE
+                                          grants anywhere, EXECUTE allow-list
+```
+
+**Verified against a live `pgvector/pg16` container as `rw_app`** (not just
+applied — behaviorally tested with real actor switches), not merely reviewed
+on paper:
+
+- TEST-08 equivalent: actor unset → 0 rows on every RLS table
+- SEC-01/TEST-02 equivalent: non-member reads a private channel directly and
+  via `rw_fn_message_history` → 0 rows both ways
+- SEC-02/TEST-03 equivalent: third party reads someone else's DM → 0 rows
+- SEC-04/SRCH-02 equivalent: non-member searches a term unique to a private
+  channel ("kryptonite") → 0 rows; the member who owns it gets 3 results with
+  correct `<mark>` highlighting
+- **IBR-01, the load-bearing one**: an ADMIN-role user (hugo) still gets 0
+  rows reading a channel he does not belong to — no admin content bypass,
+  proven live, not just absent from the SQL
+- IBR-02: a non-member discovers a PUBLIC channel exists, cannot read its
+  messages, self-joins via `rw_fn_join_channel`, then can
+- `rw_v_user_conversations`: returns exactly the actor's own channels, not
+  merely-discoverable ones
+- BR-07: DIRECT channel membership is immutable once established — leaving
+  or adding a third member both raise, even via a `SECURITY DEFINER` path
+- BR-08: re-opening an existing DM is idempotent (same channel, no duplicate)
+- BR-10: the sole owner of a channel cannot leave it
+- MSG-01: a raw `DELETE` on `rw_messages` as `rw_app` → permission denied
+- Both stored procedures exercised inside an explicit transaction (matching
+  real JDBC usage): directory search, self-service profile edit, admin-only
+  role promotion, and a non-admin's role-change attempt correctly rejected
+
+**Three real bugs found only by testing against a live database**, all now
+fixed and re-verified:
+1. `rw_v_user_conversations` had no `GRANT SELECT` for `rw_app` — a view is
+   a distinct grantable object, not inherited from its underlying tables.
+2. Five functions declared their `ROW_COUNT` capture variable as `boolean`
+   instead of `integer`, which silently miscompiled the following `> 0`
+   comparison. Latent until a call actually reached its `RETURN` statement.
+3. `rw_channel_members`'s `SELECT` policy didn't let a user see their own
+   (non-existent) row in a channel they hadn't joined yet — which broke
+   `rw_fn_join_channel`'s `ON CONFLICT DO NOTHING`, because PostgreSQL must
+   evaluate the `SELECT` policy to resolve the conflict arbiter even for
+   `DO NOTHING`. Documented as an implementation finding in
+   `docs/SECURITY_MODEL.md`.
+
+All three are the kind of defect that a design review reading the SQL would
+not have caught — this is why Phase 3 verified everything live rather than
+trusting the migrations to be correct because they applied without error.
+
+`DECISIONS.md` D-08 rewritten with the complete, honest `SECURITY DEFINER`
+function inventory (grew from an estimated 1 to ~20, each individually
+justified in a table) once every structural reason for elevation — RLS
+recursion, zero table grants on credentials/tokens, the blanket no-`DELETE`
+rule, and the embedding worker having no authenticated actor — was worked
+through against the real schema.
+
+The Phase 3 backlog's seed-loader task (3.13) is deferred to Phase 4, since
+it needs the Maven/Spring Boot skeleton that phase creates.
+
+---
+
 ## Environment verified on this machine
 
 | Tool | Version |
@@ -128,4 +208,4 @@ None blocks Phase 1 through 13 locally. Details in `README.md` § Human actions.
 
 ## Next action
 
-Begin **Phase 3** — the security-critical phase: `rw_fn_current_user_id`/`rw_fn_is_channel_member`, message/search/RAG/usage functions, auth functions, procedures, the conversations view, triggers (delete-block, edit-history, embedding-invalidation, last-owner guard, direct-channel guard), full RLS policy set, and grants (`docs/BACKLOG.md` Phase 3).
+Begin **Phase 4** — Maven project skeleton (Spring Boot 3.3, Java 21), domain ports and value objects, RlsTransactionRunner, Argon2id credential adapter, JWT issue/verify, refresh rotation, the auth REST endpoints, correlation-id filter, Problem Details error advice, rate limiting, ArchUnit layer test, and the seed loader deferred from Phase 3 (`docs/BACKLOG.md` Phase 4).

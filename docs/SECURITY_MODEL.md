@@ -135,10 +135,12 @@ Discoverability is deliberately limited to name, slug, topic and type. Message c
 ### `rw_channel_members`
 | Command | Policy |
 |---------|--------|
-| SELECT | `member(rw_channel_id)` — you see a member list only for channels you belong to (`SEC-09`). |
-| INSERT | `WITH CHECK`: self-join to a non-archived `PUBLIC` channel, **or** the actor is `OWNER`/`MODERATOR` of the target channel. `DIRECT` channels reject both (BR-07, trigger-enforced). |
-| UPDATE | own row (read cursor, mute), or `OWNER` changing a member role |
-| DELETE | own row (leave), or `OWNER`/`MODERATOR` removing a member — guarded by the last-owner trigger (BR-10). `rw_app` has no `DELETE` grant on this table by default; leaving runs through a function. |
+| SELECT | `rw_user_id = me() OR member(rw_channel_id)` — you always see your own row (needed even in channels you're not yet in — see the implementation note below), plus the full member list of any channel you belong to (`SEC-09`). |
+| INSERT | `WITH CHECK`: self-join to a non-archived `PUBLIC` channel (`rw_fn_join_channel`). Owner/moderator adds and every `DIRECT`-channel insert go through `SECURITY DEFINER` functions instead (see `DECISIONS.md` D-08). |
+| UPDATE | none — `rw_app` holds no `UPDATE` grant on this table at all. Every mutation (self read-cursor/mute, or an owner's role change on someone else) goes through `rw_fn_update_channel_member`, which enforces the two column sets are disjoint: self may touch only its own read-cursor/mute, an owner/moderator acting on someone else may touch only their role. |
+| DELETE | none — no grant, ever (D-07). `rw_fn_leave_channel` (self) and `rw_fn_remove_channel_member` (owner/moderator) perform the `DELETE` as `SECURITY DEFINER`, each re-checking its own authorization, guarded by the last-owner trigger (BR-10) and the DIRECT-channel immutability trigger (BR-07), both of which fire regardless of the executing role. |
+
+> **Implementation finding (Phase 3).** The `SELECT` policy's first branch (`rw_user_id = me()`) is not cosmetic — it is required for `rw_fn_join_channel`'s `INSERT ... ON CONFLICT DO NOTHING` to work at all. PostgreSQL needs to evaluate the `SELECT` policy to resolve the conflict-arbiter for *any* `ON CONFLICT` clause on an RLS-protected table, even for `DO NOTHING` with no pre-existing row. A user who is not yet a member cannot satisfy `member(rw_channel_id)`, so without this branch every first-time join failed with a raw RLS violation — caught by testing the join path against a live database rather than by inspection alone. Verified end-to-end (join, search isolation, `IBR-01` no-admin-bypass, `BR-07`, `BR-08`, `BR-10`, `MSG-01`) against a live `pgvector/pg16` container as `rw_app` before this file was finalized; see `PROGRESS.md`.
 
 ### `rw_messages` — the primary control
 | Command | Policy |

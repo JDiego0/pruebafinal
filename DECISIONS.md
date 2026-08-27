@@ -127,16 +127,36 @@ The two providers are configured, credentialed and failed independently. Groq be
 
 ---
 
-## D-08 — `SECURITY DEFINER` only for `rw_fn_is_channel_member`, credential checks and token rotation
-**Status:** ACCEPTED
+## D-08 — `SECURITY DEFINER`: a short, fully-enumerated, justified list
+**Status:** ACCEPTED · **Expanded during Phase 3 implementation** — the original one-function estimate grew to a still-small, fully-enumerated list once every structural reason for elevation was worked through against the real schema. Documented here in full because an honest privileged-surface inventory is exactly what a security audit needs, not a number picked in advance.
 
-**Context.** An RLS policy on `rw_messages` that consults `rw_channel_members` — itself under RLS consulting membership — recurses infinitely.
+**Context.** Three independent structural reasons force a function above `rw_app`'s ordinary, RLS-governed privilege:
 
-**Decision.** One narrow `SECURITY DEFINER` function, `rw_fn_is_channel_member(uuid) → boolean`, with `search_path` pinned and `EXECUTE` revoked from `PUBLIC`. It takes **no user parameter**, so it can only answer about the current actor and cannot be used as an oracle. The same pattern applies to credential verification and refresh-token rotation, which must reach tables the app role cannot see.
+1. **RLS self-recursion.** A policy on `rw_messages` that consults `rw_channel_members` — itself under RLS consulting membership — recurses infinitely.
+2. **No table grant at all.** `rw_user_credentials` and `rw_refresh_tokens` have zero `rw_app` grants by design (D-16, §4 of `SECURITY_MODEL.md`); reaching them requires running as the owner.
+3. **No `DELETE` grant, ever.** `rw_app` holds no `DELETE` privilege on any table (D-07). Every operation that must physically remove a row — leaving a channel, removing a member, invalidating a stale embedding — needs a function that can.
 
-**Rejected.** Making the retrieval and search functions `SECURITY DEFINER` — that would disable RLS exactly where it matters most. Those stay `SECURITY INVOKER`, deliberately.
+**Decision.** Every `SECURITY DEFINER` function (a) takes no parameter that lets it answer *about* or *act as* anyone other than the current actor, or (b) re-implements its own authorization check before mutating, exactly as an RLS policy would have. The complete list, by reason:
 
-**Consequences.** The privileged surface is three small functions, each reviewable in full.
+| Function | Reason | Self-check |
+|---|---|---|
+| `rw_fn_is_channel_member(uuid)` | recursion (1) | no user parameter — current actor only |
+| `rw_fn_is_channel_owner_or_moderator(uuid)` | recursion (1) | no user parameter |
+| `rw_fn_get_credential_for_login(text)` | no grant (2) | returns a hash only to the internal auth code path, never to an endpoint |
+| `rw_fn_record_login_attempt`, `rw_fn_issue_refresh_token`, `rw_fn_rotate_refresh_token`, `rw_fn_revoke_family` | no grant (2) | token identity proven by presenting its own hash, not by a trusted id |
+| `rw_fn_leave_channel(uuid)` | no `DELETE` (3) | deletes only `rw_user_id = me()`'s own row |
+| `rw_fn_remove_channel_member(uuid, uuid)` | no `DELETE` (3) | checks `is_channel_owner_or_moderator(me())` before deleting |
+| `rw_fn_update_channel_member(...)` | column-set separation, not just row access | self may set only read-cursor/mute; owner/moderator may set only another's role — never both from one grant |
+| `rw_fn_create_channel(...)` | bootstrap (creator has no membership row yet to satisfy the ordinary INSERT policy) | always seats exactly `me()` as OWNER, no other membership row |
+| `rw_fn_open_direct_channel(uuid)` | bootstrap + `BR-07` (exactly two rows, atomically) | always seats exactly `{me(), p_counterpart}`, idempotent via the canonical pair |
+| `rw_sp_modify_user(...)` | admin capability beyond self-row RLS | self may edit profile fields only; role/deactivation require `ADMIN`, checked inside |
+| `rw_fn_messages_before_update` (trigger) | writes `rw_message_edits`, which `rw_app` cannot `INSERT` into directly | fires only from a genuinely RLS-authorized `UPDATE` of `rw_messages` |
+| `rw_fn_messages_after_insert`, `rw_fn_messages_after_update` (triggers) | write `rw_embedding_jobs` / delete from `rw_message_embeddings`, neither grantable to `rw_app` | fire only from the corresponding trigger event, never called directly |
+| `rw_fn_claim_pending_embedding_jobs`, `rw_fn_store_message_embedding`, `rw_fn_mark_embedding_job_failed` | the embedding **worker has no authenticated actor** — `app.current_user_id` is unset for a background job, so ordinary membership-gated RLS on `rw_messages` would deny it every row | never exposed by any REST endpoint; the confidentiality boundary is enforced downstream, at *retrieval* time, by `rw_fn_rag_retrieve_candidates`'s RLS + `EXISTS` check — computing and storing a vector is not itself a disclosure, since `rw_message_embeddings` keeps its own RLS `SELECT` policy (SEC-05) |
+
+**Rejected.** Making the retrieval and search functions (`rw_fn_message_history`, `rw_fn_search_messages`, `rw_fn_rag_retrieve_candidates`) `SECURITY DEFINER` — that would disable RLS exactly where it matters most. Those stay `SECURITY INVOKER`, deliberately, with no exception.
+
+**Consequences.** ~20 functions/triggers instead of the originally-envisioned 3 — but every one is narrow, individually reviewable, and appears in the table above with its specific justification. None of them expands *what* an actor can ultimately reach; each one exists solely to get *past a plumbing limitation* (recursion, a missing grant, no `DELETE`) on the way to enforcing the same rule RLS would have enforced if it could have run at all. `EXECUTE` is revoked from `PUBLIC` schema-wide in `V9__grants.sql` and granted back to `rw_app` function-by-function, so this table doubles as the grant file's own allow-list.
 
 ---
 

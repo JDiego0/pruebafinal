@@ -55,7 +55,9 @@ Model policy per the brief: **Opus** for phases 1 (already done), 3 (RLS/RAG sec
 | 3.10 | `V7__triggers.sql` — `updated_at`; block physical delete; edit history; embedding invalidation + job enqueue; `pg_notify`; last-owner guard; direct-channel membership guard | DB-16, MSG-01, MSG-02, AI-06, BR-07, BR-10 |
 | 3.11 | `V8__rls.sql` — `ENABLE` + `FORCE` on all data tables, every policy from `SECURITY_MODEL.md` §4 | DB-17, SEC-10, SEC-12 |
 | 3.12 | `V9__grants.sql` — `rw_app` DML-only, no `DELETE`, column-scoped `UPDATE` on `rw_messages`, `EXECUTE` allow-list | SEC-11, D-07 |
-| 3.13 | Seed loader (Spring runner, JSON-schema validated, one transaction, idempotent) | DB-20, OPS-03 |
+| 3.13 | Seed loader (Spring runner, JSON-schema validated, one transaction, idempotent) — **deferred to Phase 4**, needs the Maven/Spring skeleton created there | DB-20, OPS-03 |
+
+_(3.1–3.12 complete — V4 through V9 verified against a live pgvector/pg16 database as rw_app: joins, search isolation, IBR-01 no-admin-bypass, BR-07/BR-08/BR-10, MSG-01, both procedures, RAG-adjacent worker functions. Three real bugs found and fixed in the process — see DECISIONS.md D-08 and SECURITY_MODEL.md's rw_channel_members note.)_
 
 ## PHASE 4 — Authentication  *(Sonnet)*
 | # | Task | Covers |
