@@ -142,6 +142,8 @@ Domain errors map to status codes in exactly one place:
 | `RateLimited` | 429 |
 | `ProviderUnavailable` | 503 |
 
+A second, narrower translation sits alongside this one: `GlobalExceptionHandler` also inspects `DataAccessException`'s PostgreSQL SQLSTATE and maps a handful of codes raised by `RAISE EXCEPTION` inside a SECURITY DEFINER function/procedure straight to the same statuses (`42501` insufficient-privilege → 403, `P0002` no-data-found → 404, `23514`/`23505` constraint violation → 409, `28000` → 401, `22023` → 422) — a repository never has to catch and re-wrap these itself. Everything else falls through to the generic 500 handler, unmodified (Phase 4 finding: without this, a database-level authorization rejection like `rw_sp_modify_user`'s internal admin check surfaced as an opaque 500 instead of the 403 it actually is).
+
 ---
 
 ## 4. Data flow — sending a message

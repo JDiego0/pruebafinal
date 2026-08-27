@@ -3,7 +3,7 @@
 Living state of the project. Updated at the end of every phase.
 Plan: `docs/BACKLOG.md` · Acceptance: `REQUIREMENTS.md` · Rationale: `DECISIONS.md`
 
-**Current phase:** 3 — complete. Beginning Phase 4 (authentication, Spring Boot skeleton).
+**Current phase:** 4 — complete. Beginning Phase 5 (messaging REST API).
 **Last updated:** 2026-08-27
 
 > **Amendment (2026-08-27).** MVP chat provider is **Groq**, not xAI/Grok. Groq is OpenAI-compatible, so the adapter is unchanged — but Groq publishes **no embedding models**, so chat and embeddings are now configured as two independent providers. Recorded as `DECISIONS.md` D-21 and requirement `AI-16`. No change to the schema, the RLS model, the retrieval order or any security property.
@@ -18,7 +18,7 @@ Plan: `docs/BACKLOG.md` · Acceptance: `REQUIREMENTS.md` · Rationale: `DECISION
 | 1 | Business corpus, seed, ER render | ✅ done | seed.json validated, ER embedded in DATA_MODEL.md; standalone SVG blocked locally (see note) |
 | 2 | PostgreSQL schema | ✅ done | 20 tables, migrations verified against a live pgvector/pg16 container |
 | 3 | Functions, procedures, views, triggers, RLS | ✅ done | 6 migration files, verified live as rw_app; 3 real bugs found and fixed |
-| 4 | Authentication | ⏸ not started | |
+| 4 | Authentication | ✅ done | full backend skeleton, auth + users endpoints verified live end-to-end |
 | 5 | Messaging REST API | ⏸ not started | |
 | 6 | Realtime (SSE + LISTEN/NOTIFY) | ⏸ not started | |
 | 7 | Search | ⏸ not started | |
@@ -162,6 +162,129 @@ it needs the Maven/Spring Boot skeleton that phase creates.
 
 ---
 
+## Delivered in Phase 4
+
+```
+backend/pom.xml                    Spring Boot 3.3 / Java 21, Spring JDBC
+                                    (no JPA), JJWT, Argon2 (Spring Security
+                                    Crypto), bucket4j, springdoc, ArchUnit,
+                                    Testcontainers
+backend/src/main/java/co/riwi/messaging/
+  domain/model/    ~15 value objects + AuthenticatedActor, UserProfile, etc.
+  domain/error/    DomainError hierarchy — ValidationError, AuthenticationFailed,
+                    OperationNotPermitted, ResourceNotVisible, ConflictError,
+                    ProviderUnavailable
+  domain/port/     TransactionRunner, Clock, TokenHasher, PasswordHasher,
+                    AccessTokenPort, CredentialPort, RefreshTokenPort,
+                    UserRepository, AdminUserPort — zero framework imports
+  application/     LoginUseCase, RefreshSessionUseCase, LogoutUseCase,
+                    GetProfileUseCase, UpdateProfileUseCase, QueryUsersUseCase,
+                    ModifyUserUseCase — each validate/invoke/map/return
+  infrastructure/  RlsTransactionRunner (D-02), JDBC adapters for every port,
+                    JwtService, Argon2PasswordHasher, Sha256TokenHasher,
+                    CorrelationIdFilter, JwtAuthenticationFilter,
+                    ActorArgumentResolver (@CurrentActor), RateLimitFilter,
+                    two-DataSource config (rw_app primary, rw_migrator
+                    seed-only), SeedRunner (real seed.json loader)
+  presentation/    AuthController, ProfileController, UsersController,
+                    HealthController, GlobalExceptionHandler (RFC 9457 +
+                    PostgreSQL SQLSTATE translation)
+backend/src/test/java/.../ArchitectureTest.java   5 ArchUnit rules (TEST-11)
+database/migrations/V10..V12                       3 new migrations, see below
+```
+
+**Verified against a live pgvector/pg16 database end to end** — not just
+compiled: the real `mvn spring-boot:run` app, hit with real `curl` requests,
+through the real 9 (now 12) migrations and the real seed data:
+
+- Login with the seeded Argon2id hash (regenerated for real — the Phase 1
+  placeholder hash was fabricated and could never have verified)
+- Wrong password and unknown email return the **identical** 401 shape
+  (no account enumeration)
+- `GET /me`, `PATCH /me` (self-service, RLS-scoped)
+- `GET /users` (OBJ-01, the REFCURSOR-returning stored procedure) and
+  `PATCH /users/{id}` (OBJ-02): an ADMIN can promote/deactivate; a MEMBER
+  attempting the same gets a proper 403, not a raw 500
+- `POST /auth/refresh`: rotation issues a genuinely different token;
+  replaying the old (already-rotated) token returns `TOKEN_REUSE_DETECTED`
+  and **the whole family dies** — even the legitimately-current token from
+  the same family stops working, exactly as AUTH-06 requires
+- `POST /auth/logout` revokes the family; a subsequent refresh with that
+  cookie fails; logout with no cookie at all is a silent no-op (204)
+- No token / garbage token on a protected route → 401, never a stack trace
+- `ArchitectureTest`: all 5 layering rules pass
+
+**Five real bugs found only by running the actual stack, all fixed and
+re-verified live** (none would have been caught by reading the code or by
+unit tests against mocks — this is the point of testing against a real
+database):
+
+1. **Spring `@Primary` beats by-name autowiring.** `SeedRunner`'s
+   constructor parameter was literally named `rwMigratorDataSource`, but
+   Spring resolved it to the `@Primary` `rwAppDataSource` anyway — `@Primary`
+   short-circuits before parameter-name matching is even considered. Fixed
+   with an explicit `@Qualifier`. Without this, the seed loader would have
+   silently tried to seed as `rw_app`, which has no `INSERT` grant on lookup
+   tables — it failed loudly, but for the wrong reason if you didn't know
+   this quirk existed.
+2. **JDBC binds a UUID-shaped `String` as `varchar`, not `uuid`.** A literal
+   UUID string in raw SQL text gets Postgres's implicit assignment cast; a
+   JDBC bind *parameter* carrying the same string does not, and fails with
+   "column is of type uuid but expression is of type character varying."
+   Fixed in `SeedRunner` by detecting UUID-shaped strings and binding
+   `java.util.UUID` instead.
+3. **`SELECT fn()` for a void-returning function still yields a result
+   set**, which `JdbcTemplate.update()` (→ `executeUpdate()`) rejects.
+   Broke `RlsTransactionRunner`'s `set_config` call (i.e. **every**
+   authenticated request would have failed), plus two more call sites
+   (`recordLoginAttempt`, `revokeFamily`). Fixed by switching all three to
+   `jdbc.query(sql, rs -> null, args)` (→ `executeQuery()`).
+4. **The JDBC `{call ...}` escape mis-translates a real `PROCEDURE`.**
+   PGJDBC turns `{call rw_sp_query_users(...)}` with a registered OUT
+   parameter into a function-style invocation, which PostgreSQL rejects for
+   an actual `CREATE PROCEDURE` ("... is a procedure, use CALL"). Fixed by
+   issuing literal `CALL rw.rw_sp_query_users(...)` SQL text instead of the
+   escape syntax.
+5. **PostgreSQL SQLSTATEs from a `RAISE EXCEPTION` weren't translated to
+   domain errors at all** — `rw_sp_modify_user`'s internal "only an admin"
+   check correctly raised `42501`, but the application had no mapping from
+   that to `OperationNotPermitted`, so it surfaced as an opaque 500 instead
+   of the 403 it actually is. Fixed with a `DataAccessException` handler in
+   `GlobalExceptionHandler` that maps `42501`→403, `P0002`→404,
+   `23514`/`23505`→409, `28000`→401, `22023`→422, documented in
+   `ARCHITECTURE.md` §3.5.
+
+Two more fixes landed in the SQL layer itself while chasing the above (both
+new migrations, since V4/V7 are already-applied and committed):
+
+- **V11** — the `BEFORE INSERT` direct-channel guard trigger (V7) counted
+  existing rows without checking whether the incoming row was itself one of
+  them, so re-running the seed loader against an already-seeded database hit
+  "a DIRECT channel may never have more than two members" on the harmless
+  idempotent re-insert of an existing pair. `ON CONFLICT DO NOTHING` never
+  got the chance to resolve it, because `BEFORE INSERT` triggers fire first.
+- **V12** — `rw_fn_rotate_refresh_token` inserted the successor token
+  *before* revoking the presented one, so for one instant two "live" rows
+  existed in the same family — exactly what PU-1
+  (`rw_ux_refresh_tokens_family_active`) exists to forbid, so every rotation
+  failed with a unique-violation. Fixed the statement order: revoke, insert,
+  link `replaced_by`. (Also fixed, in the same migration before it was ever
+  committed: the same `RETURNS TABLE`/column-name collision bug as
+  `rw_fn_open_direct_channel` — `rw_family_id` in a bare `WHERE` clause was
+  ambiguous against the function's own OUT parameter.)
+
+The real Argon2id hash for the seed password (`RiwiDemo#2026`) was generated
+with the actual `Argon2PasswordHasher` and written into `seed.json`,
+replacing the earlier fabricated placeholder from Phase 1 — seeded users can
+now genuinely log in.
+
+`database/migrations/V10__logout.sql`, `V11__fix_direct_channel_guard_idempotency.sql`,
+`V12__fix_refresh_rotation_order.sql` are additive-only: none of them touch
+an already-applied migration file, matching the project's Flyway-checksum
+convention (documented first when `V10` was created for the logout gap).
+
+---
+
 ## Environment verified on this machine
 
 | Tool | Version |
@@ -208,4 +331,4 @@ None blocks Phase 1 through 13 locally. Details in `README.md` § Human actions.
 
 ## Next action
 
-Begin **Phase 4** — Maven project skeleton (Spring Boot 3.3, Java 21), domain ports and value objects, RlsTransactionRunner, Argon2id credential adapter, JWT issue/verify, refresh rotation, the auth REST endpoints, correlation-id filter, Problem Details error advice, rate limiting, ArchUnit layer test, and the seed loader deferred from Phase 3 (`docs/BACKLOG.md` Phase 4).
+Begin **Phase 5** — messaging REST API: channel/membership use cases and controllers over the already-built V4 functions (`rw_fn_message_history`, `rw_fn_send_message`, `rw_fn_edit_message`, `rw_fn_soft_delete_message`, `rw_fn_join_channel`, `rw_fn_leave_channel`, `rw_fn_create_channel`, `rw_fn_open_direct_channel`), the `rw_v_user_conversations` view, keyset-cursor encoding, and OpenAPI generation (`docs/BACKLOG.md` Phase 5). Every message-writing endpoint gets a live negative test (non-member send attempt) before being called done, per `CLAUDE.md`.

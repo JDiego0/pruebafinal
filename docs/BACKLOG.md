@@ -72,6 +72,10 @@ _(3.1–3.12 complete — V4 through V9 verified against a live pgvector/pg16 da
 | 4.8 | Correlation-id filter, Problem Details advice, validation | API-02, API-03, API-04 |
 | 4.9 | Rate limiting on auth routes | §10 of API.md |
 | 4.10 | ArchUnit layer test | ARCH-04, TEST-11 |
+| 4.11 | Seed loader (deferred from Phase 3) — real Spring runner, `seed` profile, `rw_migrator` datasource | DB-20, OPS-03 |
+| 4.12 | `GET /users`, `PATCH /users/{id}` (OBJ-01/OBJ-02 wired end-to-end, pulled forward from Phase 5 since the adapters were already built and needed live verification) | OBJ-01, OBJ-02 |
+
+_(Phase 4 complete — every endpoint exercised live against a real database with a real HTTP client, not just compiled. Five real bugs found and fixed; see PROGRESS.md.)_
 
 ## PHASE 5 — Messaging API  *(Sonnet)*
 | # | Task | Covers |
