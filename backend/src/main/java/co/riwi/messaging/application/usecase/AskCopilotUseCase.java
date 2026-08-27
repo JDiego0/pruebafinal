@@ -41,7 +41,15 @@ import java.util.regex.Pattern;
  */
 public class AskCopilotUseCase {
 
-    private static final Pattern CITATION_PATTERN = Pattern.compile("\\[msg:(\\d+)]");
+    /**
+     * Matches the citation marker regardless of how the model bracketed it.
+     * Models routinely emit fullwidth brackets or parentheses instead of the
+     * requested {@code [msg:12]}, and a stricter pattern silently dropped
+     * perfectly good citations — which then read as an ungrounded answer.
+     * Being permissive here is safe: what makes a citation legitimate is the
+     * intersection with the retrieved candidate set, not its punctuation.
+     */
+    private static final Pattern CITATION_PATTERN = Pattern.compile("msg\\s*:\\s*(\\d+)");
     private static final int MAX_QUESTION_CHARS = 1000;
     private static final int MAX_ANSWER_TOKENS = 1024;
     private static final int MAX_EXCERPT_CHARS = 500;
@@ -219,8 +227,9 @@ public class AskCopilotUseCase {
                         .toList());
             }
             if (promptTokens > 0 || completionTokens > 0) {
+                // 'CHAT' matches rw_copilot_usage_operation_ck; the database owns the vocabulary.
                 copilotRepository.recordUsage(cmd.actorId(), result.turnId(), providerCode, modelCode,
-                        "chat", promptTokens, completionTokens, latencyMs);
+                        "CHAT", promptTokens, completionTokens, latencyMs);
             }
             return result;
         });

@@ -28,7 +28,7 @@ public class AiConfig {
     public AIProvider aiProvider(
             @Value("${app.ai.enabled:false}") boolean aiEnabled,
             @Value("${app.ai.base-url:}") String baseUrl,
-            @Value("${app.ai.model:llama-3.3-70b-versatile}") String model,
+            @Value("${app.ai.model:openai/gpt-oss-120b}") String model,
             @Value("${app.ai.api-key:}") String apiKey,
             @Value("${app.ai.timeout-seconds:30}") int timeoutSeconds
     ) {

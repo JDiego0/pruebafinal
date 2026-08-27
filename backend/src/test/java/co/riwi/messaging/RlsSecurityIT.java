@@ -184,6 +184,48 @@ class RlsSecurityIT {
                 .doesNotContain(secretMessage.value());
     }
 
+    @Test
+    @DisplayName("TEST-12: a question resembling private text retrieves it for a member and nothing for an outsider")
+    void ragRetrievalRanksByMeaningAndStillRefusesOutsiders() {
+        UserId member = createUser("lex-member");
+        UserId outsider = createUser("lex-outsider");
+
+        ChannelId open = createChannelUseCase.execute(member,
+                new CreateChannelCommand("PUBLIC", "Standup", slug("standup"), "Daily"));
+        ChannelId secret = createChannelUseCase.execute(member,
+                new CreateChannelCommand("PRIVATE", "War room", slug("warroom"), "Confidential"));
+        joinChannelUseCase.execute(outsider, open);
+
+        MessageId publicMessage = sendMessageUseCase.execute(member, open,
+                new SendMessageCommand("The quarterly roadmap review is on Tuesday morning",
+                        UUID.randomUUID(), null)).messageId();
+        MessageId secretMessage = sendMessageUseCase.execute(member, secret,
+                new SendMessageCommand("The quarterly roadmap review was moved because of the outage",
+                        UUID.randomUUID(), null)).messageId();
+
+        // The question is never identical to either message — retrieval has to
+        // rank on shared vocabulary, which is what the offline provider gives us.
+        float[] question = embeddingProvider.embed(List.of("when is the quarterly roadmap review")).get(0);
+        storeEmbedding(publicMessage, embeddingProvider.embed(List.of(
+                "The quarterly roadmap review is on Tuesday morning")).get(0));
+        storeEmbedding(secretMessage, embeddingProvider.embed(List.of(
+                "The quarterly roadmap review was moved because of the outage")).get(0));
+
+        List<RagCandidate> memberView = transactionRunner.runAsActor(member,
+                () -> ragRepository.retrieveCandidates(question, null, 20, 0.01));
+        assertThat(memberView)
+                .as("a lexically related question must actually retrieve something")
+                .isNotEmpty();
+        assertThat(memberView).extracting(c -> c.messageId().value())
+                .contains(publicMessage.value(), secretMessage.value());
+
+        List<RagCandidate> outsiderView = transactionRunner.runAsActor(outsider,
+                () -> ragRepository.retrieveCandidates(question, null, 20, 0.01));
+        assertThat(outsiderView).extracting(c -> c.messageId().value())
+                .contains(publicMessage.value())
+                .doesNotContain(secretMessage.value());
+    }
+
     // ── SEC-11 ───────────────────────────────────────────────────────────────
 
     @Test

@@ -5,6 +5,7 @@ import co.riwi.messaging.domain.model.ChatResponse;
 import co.riwi.messaging.domain.port.AIProvider;
 import co.riwi.messaging.domain.error.ProviderUnavailable;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,7 +28,15 @@ import java.util.Map;
 public class OpenAiCompatibleChatProvider implements AIProvider {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAiCompatibleChatProvider.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    /**
+     * Lenient on unknown fields by design. "OpenAI-compatible" is a family of
+     * dialects, not one schema: providers add `reasoning`, `refusal`,
+     * `finish_reason`, vendor blocks, and each new model adds more. Failing to
+     * deserialize a response we could otherwise read would turn a working answer
+     * into PROVIDER_ERROR.
+     */
+    private static final ObjectMapper MAPPER = new ObjectMapper()
+            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     private final String baseUrl;
     private final String model;
@@ -80,8 +89,14 @@ public class OpenAiCompatibleChatProvider implements AIProvider {
             }
 
             CompletionResponse cr = MAPPER.readValue(response.body(), CompletionResponse.class);
+            if (cr.choices() == null || cr.choices().isEmpty() || cr.choices().get(0).message() == null) {
+                throw new ProviderUnavailable("Chat provider returned no choices");
+            }
             String content = cr.choices().get(0).message().content();
-            Usage usage = cr.usage();
+
+            // Token counts are reporting, not correctness: a provider that omits
+            // them must not cost the user their answer.
+            Usage usage = cr.usage() != null ? cr.usage() : new Usage(0, 0, 0);
 
             return new ChatResponse(content,
                     usage.promptTokens(), usage.completionTokens(), usage.totalTokens());

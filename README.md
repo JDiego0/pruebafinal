@@ -313,10 +313,19 @@ reaches OpenAI or Ollama by changing three variables and no code.
    AI_ENABLED=true
    AI_PROVIDER_CODE=groq
    AI_BASE_URL=https://api.groq.com/openai/v1
-   AI_MODEL=llama-3.3-70b-versatile
+   AI_MODEL=openai/gpt-oss-120b
    AI_API_KEY=gsk_your_key_here
    ```
-4. Restart the backend: `docker compose up -d --force-recreate backend`.
+4. Restart the backend: `docker compose up -d backend`.
+
+Groq retires models regularly, and a retired id fails with HTTP 404 and status `PROVIDER_ERROR`.
+List what your account can actually reach:
+
+```bash
+curl -s https://api.groq.com/openai/v1/models   -H "Authorization: Bearer $AI_API_KEY" | jq -r '.data[].id' | sort
+```
+
+Pick a general instruction-following model from that list and set `AI_MODEL` to it.
 
 Without a key the copilot answers with status `PROVIDER_ERROR` and the UI says the provider is
 unavailable. Everything else — messaging, search, realtime, embeddings, and every security
@@ -328,8 +337,15 @@ Groq publishes no embedding models and no `/embeddings` endpoint, so embeddings 
 **separately from chat**.
 
 **Default (recommended for the assessment):** leave `EMBEDDING_BASE_URL` empty. The backend uses
-`DeterministicLocalEmbeddingProvider` — offline, no credentials, stable 1536-dimension vectors. It
-is what the security suite runs against.
+`DeterministicLocalEmbeddingProvider` — offline, no credentials, stable 1536-dimension vectors, and
+what the security suite runs against.
+
+It is **feature hashing**, not a trained model: tokens are accent-folded, stop-worded, and hashed
+into 1536 buckets, so cosine similarity measures shared vocabulary. That is a real signal and it is
+enough for the copilot to retrieve and cite correctly — but it matches words, not meaning. A
+question phrased entirely differently from the message it should find will miss. Configure a hosted
+provider below for better recall. The isolation boundary is identical either way: what a user may
+retrieve is decided by PostgreSQL, not by the embedder.
 
 **Hosted alternative:**
 
@@ -346,6 +362,14 @@ Two constraints:
   and a `CHECK` on `rw_embedding_models`. Changing it is a migration, not a setting.
 - `EMBEDDING_MODEL_CODE` must match a row in `rw_embedding_models`; register the model there before
   switching, or the worker falls back to the lowest active model and stamps the wrong code.
+
+**Changing embedding provider invalidates every stored vector**, and the outbox will not re-enqueue
+on its own — `rw_content_hash` hashes the message body, which has not changed. Re-embed explicitly:
+
+```sql
+TRUNCATE rw.rw_message_embeddings;
+INSERT INTO rw.rw_embedding_jobs (rw_message_id) SELECT rw_message_id FROM rw.rw_messages;
+```
 
 Vectors are produced by a background worker that drains `rw_embedding_jobs`, a transactional outbox
 filled by a trigger whenever a message is created or its body changes. Check that it is keeping up:
@@ -432,11 +456,11 @@ cd backend
 ./mvnw test
 ```
 
-This runs both suites — 16 tests:
+This runs both suites — 17 tests:
 
 - **`ArchitectureTest`** (6) — ArchUnit. Proves `domain` imports no framework, and that the
   dependency direction `presentation → application → domain ← infrastructure` holds.
-- **`RlsSecurityIT`** (10) — the PostgreSQL security suite, below.
+- **`RlsSecurityIT`** (11) — the PostgreSQL security suite, below.
 
 ### Database security tests
 
@@ -456,6 +480,7 @@ migrations to it, and connects the application as `rw_app` exactly as production
 | `authenticationWorks` | the right password issues access and refresh tokens; the wrong one raises `AuthenticationFailed` |
 | `editDeleteAndKeysetPagination` | edit bumps the revision and writes history, delete is a tombstone with the row still present, keyset pages do not overlap |
 | `rlsIsEnabledAndForcedEverywhere` | every table in the `rw` schema has RLS **enabled and forced** — no exception list |
+| `ragRetrievalRanksByMeaningAndStillRefusesOutsiders` | a question that matches neither message verbatim retrieves both for the member and only the public one for the outsider |
 
 Run just that suite:
 
@@ -593,6 +618,10 @@ The forbidden shape — global vector search followed by application filtering �
 here. The ANN operator exists in exactly one function, and that function's `FROM` clause is already
 restricted to the caller's rows before a single candidate is scored.
 
+**Tuning.** `RAG_SIMILARITY_FLOOR` defaults to `0.05`, calibrated against the offline provider: on
+the seed corpus, genuinely relevant matches score 0.126–0.333 and unrelated messages score
+0.000–0.072. Raise it when you configure a trained embedding model, whose scores run much higher.
+
 **Statuses:** `ANSWERED`, `INSUFFICIENT_CONTEXT` (nothing authorized matched),
 `NO_PERMISSION` (the requested channel is not the actor's), `OUT_OF_SCOPE` (authorized context
 existed but the answer grounded itself in none of it), `PROVIDER_ERROR` (no key, or the provider
@@ -629,15 +658,27 @@ The seed did not run, or ran against a different database. Check
 `select count(*) from rw.rw_user_credentials;` — it should be 8.
 
 **Copilot always answers "the AI provider is currently unavailable".**
-`AI_ENABLED` is `false` or `AI_API_KEY` is empty. See §9. This is expected out of the box.
+`AI_ENABLED` is `false` or `AI_API_KEY` is empty — expected out of the box, see §9. If both are set,
+check `docker compose logs backend | grep "AI provider"`: an HTTP 404 means `AI_MODEL` names a model
+Groq has retired or your account cannot reach. List the available ones with the `curl` in §9.
 
 **Copilot answers `INSUFFICIENT_CONTEXT` for everything.**
-No vectors yet. Check the pending-jobs query in §10; the worker runs every 5 seconds. If `pending`
-stays high, confirm `EMBEDDING_MODEL_CODE` matches a row in `rw_embedding_models`.
+Either there are no vectors, or nothing clears the similarity floor. Check the pending-jobs query in
+§10; the worker runs every 5 seconds, and if `pending` stays high, confirm `EMBEDDING_MODEL_CODE`
+matches a row in `rw_embedding_models`. If vectors exist, lower `RAG_SIMILARITY_FLOOR` — the offline
+provider matches shared vocabulary, so its scores are low by the standards of a trained model.
+
+**A newly created database has vectors from an older embedding provider.**
+Switching provider does not re-enqueue existing messages. Re-embed with the SQL in §10.
 
 **`./mvnw test` fails with "Could not find a valid Docker environment".**
 Docker is not running, or the daemon rejects the API version docker-java negotiates. The build
 already pins `-Dapi.version=1.44`; if it still fails, use the `TEST_POSTGRES_URL` path in §14.
+
+**`FATAL: password authentication failed for user "postgres"` from the `migrate` service.**
+The `pgdata` volume was initialised with different credentials than `.env` now supplies — PostgreSQL
+only applies `POSTGRES_PASSWORD` on first initialisation. This happens if you run the stack, then
+create or edit `.env`. Reset the volume: `docker compose down -v && docker compose up --build`.
 
 **Port already in use.**
 Set `BACKEND_PORT`, `FRONTEND_PORT`, or `POSTGRES_PORT_HOST` in `.env`.
