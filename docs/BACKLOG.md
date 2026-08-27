@@ -38,7 +38,7 @@ Model policy per the brief: **Opus** for phases 1 (already done), 3 (RLS/RAG sec
 | 2.2 | `V2__tables.sql` — 20 tables, PK, FK with explicit `ON DELETE`, `NOT NULL`, `CHECK`, `timestamptz` | DB-03…DB-09 |
 | 2.3 | `V3__indexes.sql` — keyset, FK, GIN, HNSW, 3 partial unique indexes | DB-10, DB-11 |
 | 2.4 | Generated `tsvector` column | SRCH-01, D-12 |
-| 2.5 | Schema smoke test: every FK has an `ON DELETE`; every table has a PK | DB-04, DB-05 |
+| 2.5 | Schema smoke test: every FK has an `ON DELETE`; every table has a PK | DB-04, DB-05 | ✅
 
 ## PHASE 3 — Logic and RLS  *(Opus — security critical)*
 | # | Task | Covers |

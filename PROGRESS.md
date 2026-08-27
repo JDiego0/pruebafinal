@@ -3,7 +3,7 @@
 Living state of the project. Updated at the end of every phase.
 Plan: `docs/BACKLOG.md` · Acceptance: `REQUIREMENTS.md` · Rationale: `DECISIONS.md`
 
-**Current phase:** 1 — complete. Beginning Phase 2 (PostgreSQL schema).
+**Current phase:** 2 — complete. Beginning Phase 3 (functions, procedures, views, triggers, RLS).
 **Last updated:** 2026-08-27
 
 > **Amendment (2026-08-27).** MVP chat provider is **Groq**, not xAI/Grok. Groq is OpenAI-compatible, so the adapter is unchanged — but Groq publishes **no embedding models**, so chat and embeddings are now configured as two independent providers. Recorded as `DECISIONS.md` D-21 and requirement `AI-16`. No change to the schema, the RLS model, the retrieval order or any security property.
@@ -16,7 +16,7 @@ Plan: `docs/BACKLOG.md` · Acceptance: `REQUIREMENTS.md` · Rationale: `DECISION
 |-------|------|--------|-------|
 | 0 | Initialization | ✅ done | Requirements, architecture, ER + 3NF, security model, API contract, backlog |
 | 1 | Business corpus, seed, ER render | ✅ done | seed.json validated, ER embedded in DATA_MODEL.md; standalone SVG blocked locally (see note) |
-| 2 | PostgreSQL schema | 🔄 in progress | |
+| 2 | PostgreSQL schema | ✅ done | 20 tables, migrations verified against a live pgvector/pg16 container |
 | 3 | Functions, procedures, views, triggers, RLS | ⏸ not started | Opus — security critical |
 | 4 | Authentication | ⏸ not started | |
 | 5 | Messaging REST API | ⏸ not started | |
@@ -128,4 +128,4 @@ None blocks Phase 1 through 13 locally. Details in `README.md` § Human actions.
 
 ## Next action
 
-Begin **Phase 2** — Flyway migrations: extensions and roles, the 20-table schema, indexes, and the generated `tsvector` column (`docs/BACKLOG.md` Phase 2).
+Begin **Phase 3** — the security-critical phase: `rw_fn_current_user_id`/`rw_fn_is_channel_member`, message/search/RAG/usage functions, auth functions, procedures, the conversations view, triggers (delete-block, edit-history, embedding-invalidation, last-owner guard, direct-channel guard), full RLS policy set, and grants (`docs/BACKLOG.md` Phase 3).

@@ -160,7 +160,7 @@ Legend: **PK** primary key · **FK** foreign key · **U** unique · **PU** parti
 | `rw_channel_id` | `uuid` | **FK** → `rw_channels` `ON DELETE CASCADE`, **NN** |
 | `rw_sender_id` | `uuid` | **FK** → `rw_users` `ON DELETE RESTRICT`, **NN** |
 | `rw_parent_message_id` | `bigint` | **FK** → self `ON DELETE SET NULL`, null |
-| `rw_body` | `text` | **NN**, `CHECK length(btrim(rw_body)) between 1 and 4000` |
+| `rw_body` | `text` | nullable — see note below |
 | `rw_client_message_id` | `uuid` | **NN** — **U** `(rw_channel_id, rw_sender_id, rw_client_message_id)` (idempotent send, IBR-04) |
 | `rw_is_deleted` | `boolean` | **NN**, default `false` |
 | `rw_deleted_at` | `timestamptz` | null, `CHECK` consistent with `rw_is_deleted` |
@@ -171,6 +171,8 @@ Legend: **PK** primary key · **FK** foreign key · **U** unique · **PU** parti
 | `rw_search_vector` | `tsvector` | **NN**, `GENERATED ALWAYS AS (to_tsvector('spanish', rw_body)) STORED` |
 
 Indexes: keyset `(rw_channel_id, rw_created_at DESC, rw_message_id DESC) WHERE NOT rw_is_deleted`; GIN on `rw_search_vector`; FK indexes on sender and parent.
+
+> **Implementation refinement (Phase 2).** BR-06 says a deleted message "exposes no body." Rather than trust every consumer (views, functions, future code) to remember to mask it, `rw_body` is cleared to `NULL` **at the database level** the moment a message is soft-deleted, enforced by `CHECK (rw_messages_deleted_shape_ck)`: a live message always has `rw_body NOT NULL` (1–4000 chars after trim) and both delete columns `NULL`; a deleted message always has `rw_body IS NULL` and both delete columns `NOT NULL`. This makes BR-06 a schema guarantee instead of a view-layer convention — a raw `SELECT * FROM rw_messages` by a member can never surface deleted content, even from a query nobody anticipated. The generated `rw_search_vector` uses `coalesce(rw_body, '')`, so a deleted message indexes to an empty vector.
 
 ### 3.11 `rw_message_edits` — immutable revision history
 `rw_message_edit_id bigint` **PK** identity · `rw_message_id` **FK** `ON DELETE CASCADE` **NN** · `rw_previous_body text` **NN** · `rw_previous_revision integer` **NN** · `rw_edited_by uuid` **FK** `ON DELETE RESTRICT` **NN** · `rw_edited_at timestamptz` **NN** default `now()` · **U** `(rw_message_id, rw_previous_revision)`
