@@ -29,6 +29,11 @@ dist-ssr/
 .vite/
 *.local
 coverage/
+*.tsbuildinfo
+# `tsc -b` used to emit these next to the source; tsconfig.node.json now sets
+# noEmit, but keep them out in case a stale build produces them again.
+frontend/vite.config.js
+frontend/vite.config.d.ts
 .eslintcache
 npm-debug.log*
 yarn-debug.log*

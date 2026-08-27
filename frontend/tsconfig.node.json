@@ -1,6 +1,10 @@
 {
   "compilerOptions": {
     "composite": true,
+    // Type-check vite.config.ts; never compile it. Without this, `tsc -b`
+    // emits vite.config.js next to the source, and Vite resolves the .js
+    // ahead of the .ts, so edits to the real config would be ignored.
+    "noEmit": true,
     "skipLibCheck": true,
     "module": "ESNext",
     "moduleResolution": "bundler",

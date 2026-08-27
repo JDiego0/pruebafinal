@@ -1,7 +1,8 @@
 # REQUIREMENTS.md — Riwi Messaging Platform
 
 Traceability spine for the technical assessment. Every requirement has a stable ID.
-`FINAL_AUDIT.md` reports one row per ID with status `PASS | PARTIAL | FAIL`.
+`FINAL_AUDIT.md` reports one row per ID, stating what was executed to verify it:
+`VERIFIED` / `PARTIAL` / `BUILDS - NOT EXECUTED` / `NOT PRESENT`.
 
 Scope classification: **MVP** (must exist in the vertical slice) / **POST-MVP** (deferred, cut documented in `DECISIONS.md`).
 
