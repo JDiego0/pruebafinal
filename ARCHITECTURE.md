@@ -22,8 +22,8 @@ Companion documents: `docs/DATA_MODEL.md` (ER, 3NF), `docs/SECURITY_MODEL.md` (R
 └───────────┬───────────────────────────────────┬──────────────────────┘
             │ JDBC as rw_app (NOBYPASSRLS)      │ HTTPS (OpenAI-compatible)
 ┌───────────▼───────────────────────────────────▼──────────────────────┐
-│  PostgreSQL 16 + pgvector                     │  AI provider          │
-│  RLS · functions · procedures · views         │  xAI / OpenAI / local │
+│  PostgreSQL 16 + pgvector                     │  Groq — chat          │
+│  RLS · functions · procedures · views         │  Embedding provider   │
 │  triggers · FTS · HNSW · LISTEN/NOTIFY        │  (interchangeable)    │
 └──────────────────────────────────────────────────────────────────────┘
 ```
@@ -122,7 +122,7 @@ Planned use cases: `Login`, `RefreshSession`, `Logout`, `GetProfile`, `UpdatePro
 - **Persistence** — `NamedParameterJdbcTemplate` adapters, one per port. Every adapter calls a database function or a parameterized statement; there is no string concatenation and no `OFFSET` (`MSG-03`, `MSG-04`). No JPA (see `DECISIONS.md` D-03).
 - **`RlsTransactionRunner`** — the only place a transaction begins. It opens the transaction, runs `SELECT set_config('app.current_user_id', :actor, true)`, executes the work, commits. A guard rejects repository calls made outside it.
 - **Security** — JWT issue/verify, Argon2id encoder, the authentication filter that builds `AuthenticatedActor` from the token, refresh-token rotation service.
-- **AI** — `OpenAiCompatibleAIProvider` (base URL + model + key from config: works against xAI, OpenAI, Together, Ollama, LM Studio), `DeterministicLocalEmbeddingProvider` (offline fallback so the stack runs with no key), `NullAIProvider` (returns `PROVIDER_UNAVAILABLE`). Selected by configuration, injected by interface — the use case cannot tell which is active.
+- **AI** — `OpenAiCompatibleChatProvider` (base URL + model + key from config; MVP target is Groq at `https://api.groq.com/openai/v1`, and the same adapter reaches OpenAI, Together, Ollama or LM Studio), `OpenAiCompatibleEmbeddingProvider`, `DeterministicLocalEmbeddingProvider` (offline fallback so the stack runs with no key), `NullAIProvider` (returns `PROVIDER_UNAVAILABLE`). Chat and embeddings are configured and credentialed **independently**, because Groq serves chat only — see `DECISIONS.md` D-21. Selected by configuration, injected by interface: the use case cannot tell which is active.
 - **Realtime** — `PostgresNotificationListener` on a dedicated connection running `LISTEN rw_message_created`, plus an in-process `SseHub` fanning out to subscribers filtered by membership.
 - **Config** — Flyway, datasource, CORS, rate limiting, OpenAPI.
 
@@ -199,7 +199,14 @@ AskCopilotUseCase
   └── persist turn + citations + usage ledger
 ```
 
-`AIProvider` and `EmbeddingProvider` are domain ports. The OpenAI-compatible adapter is configured by `AI_BASE_URL`, `AI_MODEL`, `AI_API_KEY`, so switching from xAI/Grok to OpenAI or a local server is an environment change, not a code change (`AI-02`, `AI-03`). With no key configured the stack still runs: the deterministic local embedding provider keeps retrieval and all security tests meaningful, and chat returns `PROVIDER_UNAVAILABLE` — the security properties are provider-independent by design.
+`AIProvider` and `EmbeddingProvider` are **two separate domain ports**, and that separation is load-bearing rather than decorative: the MVP chat provider is **Groq**, which publishes no embedding models, so the two roles must be satisfied by different vendors (`DECISIONS.md` D-21).
+
+| Port | MVP implementation | Configuration |
+|------|--------------------|---------------|
+| `AIProvider` (chat) | Groq, OpenAI-compatible | `AI_BASE_URL=https://api.groq.com/openai/v1`, `AI_MODEL=llama-3.3-70b-versatile`, `AI_API_KEY` |
+| `EmbeddingProvider` | deterministic local by default; any OpenAI-compatible `/embeddings` endpoint when configured | `EMBEDDING_BASE_URL`, `EMBEDDING_MODEL`, `EMBEDDING_API_KEY`, `EMBEDDING_DIMENSIONS=1536` |
+
+Switching either provider is an environment change, not a code change (`AI-02`, `AI-03`), and the two fail independently — an unreachable Groq degrades chat to `PROVIDER_UNAVAILABLE` without stopping message indexing. With neither key configured the stack still runs: the deterministic local embedding provider keeps retrieval and all security tests meaningful. The security properties are provider-independent by construction, which is why changing vendors touches configuration and documentation and nothing in the authorization path.
 
 Full retrieval and injection detail: `docs/SECURITY_MODEL.md` §6.
 

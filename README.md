@@ -34,7 +34,7 @@ Full detail: [`docs/SECURITY_MODEL.md`](docs/SECURITY_MODEL.md).
 | Backend | Java 21 · Spring Boot 3.3 · Maven · Spring JDBC · Flyway — Clean Architecture |
 | Frontend | React 19 · TypeScript · Vite · TanStack Query · i18next (es/en) |
 | Realtime | Server-Sent Events over PostgreSQL `LISTEN`/`NOTIFY` |
-| AI | `AIProvider` port + OpenAI-compatible adapter (xAI/Grok, OpenAI, local) |
+| AI | `AIProvider` port → **Groq** (OpenAI-compatible chat) · `EmbeddingProvider` port → local or any OpenAI-compatible `/embeddings` |
 | Testing | JUnit 5 · Testcontainers against real PostgreSQL · ArchUnit |
 | Delivery | Docker Compose (`db` → `migrate` → `backend` → `frontend`) |
 
@@ -95,12 +95,19 @@ The stack is designed to run **fully offline with no external credentials**. Not
 - **Where to configure:** `SUPABASE_DB_URL`, `SUPABASE_DB_PASSWORD` in `.env`.
 - **Security:** paste it into `.env` only — never into source, never into a committed file. `.env` is git-ignored.
 
-### HUMAN-02 — AI provider API key *(optional: only for real copilot answers)*
-- **What:** an API key, base URL and model for any OpenAI-compatible provider (xAI/Grok, OpenAI, a local server).
-- **Why:** to generate real embeddings and real answers. Without it, embeddings use a deterministic local provider and chat returns `PROVIDER_UNAVAILABLE`. **The security properties — including the RAG isolation tests — hold and are proven either way.**
-- **Where to obtain:** xAI → console.x.ai → API Keys. OpenAI → platform.openai.com → API Keys.
-- **Where to configure:** `AI_ENABLED=true`, `AI_BASE_URL`, `AI_MODEL`, `AI_API_KEY`, `AI_EMBEDDING_MODEL` in `.env`.
-- **Security:** the key is read from the environment only. It is never logged, never sent to the frontend, and never committed. Any configured embedding model must produce 1536 dimensions.
+### HUMAN-02 — Groq API key *(optional: only for real copilot answers)*
+- **What:** a Groq API key.
+- **Why:** Groq is the MVP chat provider. Without a key the copilot returns `PROVIDER_UNAVAILABLE`. **The security properties — including the RAG isolation tests — hold and are proven either way**, because they do not depend on any provider.
+- **Where to obtain:** [console.groq.com](https://console.groq.com) → *API Keys* → Create API Key.
+- **Where to configure:** `.env` — set `AI_ENABLED=true` and `AI_API_KEY=<key>`. `AI_BASE_URL` (`https://api.groq.com/openai/v1`) and `AI_MODEL` (`llama-3.3-70b-versatile`) are pre-filled.
+- **Security:** read from the environment only — never a literal in source, never logged, never sent to the frontend, never committed. `.env` is git-ignored.
+
+### HUMAN-02b — Embedding provider key *(optional: only for semantic retrieval quality)*
+- **What:** a base URL, model and key for any OpenAI-compatible `/embeddings` endpoint (OpenAI, a local Ollama, etc.).
+- **Why:** **Groq publishes no embedding models**, so embeddings come from a separate provider (`DECISIONS.md` D-21). The default is a built-in deterministic local provider that needs no credentials and no network — the whole stack and the entire security suite run on it. A real embedding model improves retrieval *relevance* only.
+- **Where to obtain:** OpenAI → [platform.openai.com](https://platform.openai.com) → API Keys. Or run Ollama locally and leave the key empty.
+- **Where to configure:** `EMBEDDING_BASE_URL`, `EMBEDDING_MODEL`, `EMBEDDING_API_KEY` in `.env`.
+- **Security:** same handling as above. The configured model **must** emit 1536 dimensions — the pgvector column width, validated at startup.
 
 ### HUMAN-03 — GitHub repository *(only when publishing)*
 - **What:** the repository URL and authorization to push.

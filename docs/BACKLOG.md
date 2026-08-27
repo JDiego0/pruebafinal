@@ -27,7 +27,7 @@ Model policy per the brief: **Opus** for phases 1 (already done), 3 (RLS/RAG sec
 |---|------|--------|
 | 1.1 | `database/seeds/seed.schema.json` | MOD-04 |
 | 1.2 | `seed.json` `model` block — entities, attributes, relationships, cardinalities, explicit + implicit rules, normalization decisions | MOD-01…MOD-05 |
-| 1.3 | `seed.json` `data` block — 2 roles, 3 channel types, 3 member roles, 8 users, 6 channels (2 public, 2 private, 2 direct), ~120 realistic bilingual messages, providers/models, system prompt v1 | DB-20 |
+| 1.3 | `seed.json` `data` block — 2 roles, 3 channel types, 3 member roles, 8 users, 6 channels (2 public, 2 private, 2 direct), ~120 realistic bilingual messages, system prompt v1, and `rw_ai_providers` / `rw_embedding_models` rows: `groq` (chat, OpenAI-compatible) + `local` (embeddings, `deterministic-1536`) | DB-20, D-21 |
 | 1.4 | Deliberate negative fixtures: a private channel with a term that appears nowhere else, and a DM whose content is semantically near a public message (for TEST-04/05) | TEST-04, TEST-05 |
 | 1.5 | Render `docs/diagrams/er.svg` from `er.mmd` | MOD-06, DOC-05 |
 
@@ -119,9 +119,10 @@ Model policy per the brief: **Opus** for phases 1 (already done), 3 (RLS/RAG sec
 ## PHASE 9 — AI RAG  *(Sonnet, security review by Opus)*
 | # | Task | Covers |
 |---|------|--------|
-| 9.1 | `AIProvider` / `EmbeddingProvider` ports | AI-02 |
-| 9.2 | `OpenAiCompatibleAIProvider` (xAI/OpenAI/local) | AI-03 |
-| 9.3 | `DeterministicLocalEmbeddingProvider` fallback | D-06 |
+| 9.1 | `AIProvider` / `EmbeddingProvider` ports — separate, independently configured | AI-02, AI-16 |
+| 9.2 | `OpenAiCompatibleChatProvider` targeting **Groq** (`https://api.groq.com/openai/v1`, `llama-3.3-70b-versatile`); same adapter serves OpenAI/Ollama | AI-03 |
+| 9.3 | `DeterministicLocalEmbeddingProvider` (default, offline) + `OpenAiCompatibleEmbeddingProvider`; startup validation that the model emits 1536 dimensions | D-06, D-21 |
+| 9.3b | Independent failure handling: unreachable Groq degrades chat to `PROVIDER_UNAVAILABLE` without stopping the embedding worker, and vice versa | AI-16 |
 | 9.4 | Embedding worker draining `rw_embedding_jobs` | AI-05, AI-06 |
 | 9.5 | System prompt v1, persisted and versioned | AI-14 |
 | 9.6 | `AskCopilotUseCase`: embed → retrieve → assemble → call → validate citations → persist | AI-01, AI-07 |

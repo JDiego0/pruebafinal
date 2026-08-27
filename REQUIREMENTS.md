@@ -147,7 +147,8 @@ Scope classification: **MVP** (must exist in the vertical slice) / **POST-MVP** 
 |----|-------------|-------|
 | AI-01 | RAG pipeline implemented end to end. | MVP |
 | AI-02 | `AIProvider` abstraction; no direct coupling to a single vendor. | MVP |
-| AI-03 | OpenAI-compatible implementation so providers are interchangeable (xAI/Grok, OpenAI, others). | MVP |
+| AI-03 | OpenAI-compatible implementation so providers are interchangeable. MVP chat provider: **Groq**. | MVP |
+| AI-16 | Chat and embedding providers configured, credentialed and failing independently (Groq offers no embeddings). | MVP |
 | AI-04 | Provider credentials only from environment; never hardcoded, never committed. | MVP |
 | AI-05 | Embeddings stored in `pgvector` and associated with messages. | MVP |
 | AI-06 | A trigger keeps vector and search data consistent when a message changes. | MVP |

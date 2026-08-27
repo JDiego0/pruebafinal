@@ -74,13 +74,43 @@ Scope cuts are tracked in §D-20 with `MVP` / `POST-MVP` classification.
 ---
 
 ## D-06 — `AIProvider` / `EmbeddingProvider` ports with an OpenAI-compatible adapter
-**Status:** ACCEPTED
+**Status:** ACCEPTED · **Amended 2026-08-27** — MVP chat provider changed from xAI/Grok to **Groq**. The port design is unchanged; only the configured implementation and its endpoint differ. See D-21 for the consequence that Groq forced.
 
-**Decision.** Two domain-layer interfaces. Infrastructure supplies `OpenAiCompatibleAIProvider` (base URL + model + key from environment — works with xAI/Grok, OpenAI, Together, Ollama, LM Studio), `DeterministicLocalEmbeddingProvider` (offline), and `NullAIProvider`.
+**Decision.** Two domain-layer interfaces. Infrastructure supplies `OpenAiCompatibleChatProvider` (base URL + model + key from environment — works with Groq, OpenAI, Together, Ollama, LM Studio), `OpenAiCompatibleEmbeddingProvider`, `DeterministicLocalEmbeddingProvider` (offline), and `NullAIProvider`.
 
 **Rejected.** Direct vendor SDK (couples the domain to one vendor, violates `AI-02`); Spring AI (a further abstraction over an abstraction, with its own opinions about prompts and retrieval that would obscure the security-critical retrieval order).
 
 **Consequences.** Switching providers is an environment change. Crucially, **the security tests do not need an API key**: the deterministic local embedding provider produces stable vectors, so `TEST-04` proves the isolation property with no network and no credentials. Answer *quality* needs a real provider (`HUMAN-02`); answer *safety* does not.
+
+---
+
+## D-21 — Groq for chat; embeddings from a separate provider
+**Status:** ACCEPTED (2026-08-27, supersedes the xAI/Grok assumption in D-06)
+
+**Context.** The MVP chat provider is **Groq**. Groq exposes an OpenAI-compatible API at `https://api.groq.com/openai/v1`, so the existing `OpenAiCompatibleChatProvider` reaches it with no code change — only `AI_BASE_URL`, `AI_MODEL` and `AI_API_KEY` differ.
+
+But Groq's catalogue is inference-only for chat, speech and vision: **it publishes no text-embedding models and no `/embeddings` endpoint.** A single-provider assumption would therefore have left the RAG pipeline with no way to produce vectors.
+
+**Decision.** Split the configuration of the two ports, which the architecture already kept as separate interfaces:
+
+| Port | MVP implementation | Configuration |
+|------|--------------------|---------------|
+| `AIProvider` (chat) | Groq, OpenAI-compatible | `AI_BASE_URL=https://api.groq.com/openai/v1`, `AI_MODEL=llama-3.3-70b-versatile`, `AI_API_KEY` |
+| `EmbeddingProvider` | `DeterministicLocalEmbeddingProvider` by default; any OpenAI-compatible `/embeddings` endpoint when configured | `EMBEDDING_BASE_URL`, `EMBEDDING_MODEL`, `EMBEDDING_API_KEY`, `EMBEDDING_DIMENSIONS=1536` |
+
+The two providers are configured, credentialed and failed independently. Groq being unreachable degrades chat to `PROVIDER_UNAVAILABLE` without stopping message indexing; the embedding provider being unreachable stops indexing without breaking messaging.
+
+**Rejected.**
+- *Waiting for Groq to add embeddings* — would block `AI-05` on a third party's roadmap.
+- *Hashing/TF-IDF vectors passed off as semantic embeddings* — dishonest about what retrieval does; the deterministic local provider is documented as a deterministic stand-in for offline and test use, not as a semantic model.
+- *Forcing one provider for both roles* (dropping Groq, or adding a second Groq-only path) — the first ignores the developer's instruction, the second is exactly the vendor coupling `AI-02` forbids.
+
+**Consequences.**
+1. The two-port split stops being a stylistic choice and becomes load-bearing. This is the design paying off: because `AIProvider` and `EmbeddingProvider` were never one interface, absorbing a chat-only vendor is a configuration change.
+2. Two optional credentials instead of one. Both remain optional — the stack still runs, and every security test still passes, with neither.
+3. The `vector(1536)` column width is unchanged and remains the contract: any configured embedding model **must** emit 1536 dimensions, validated at startup. Changing it is a migration, not a setting.
+4. `rw_ai_providers` seeds a `groq` row (chat, OpenAI-compatible) and a `local` row (embeddings), so `rw_copilot_usage` attributes token spend to the right vendor per operation. The schema already modelled provider and model as separate lookups, so no schema change is required.
+5. **No security property changes.** Retrieval order, RLS enforcement, the citation allow-list and the untrusted-context framing are provider-independent by construction — which is why swapping the vendor touches configuration and documentation, and nothing in the authorization path.
 
 ---
 

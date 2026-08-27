@@ -235,7 +235,8 @@ Accumulated consumption for the authenticated user (`OBJ-07`, `AI-15`).
   "totals": { "requests": 42, "promptTokens": 51840, "completionTokens": 6120, "totalTokens": 57960 },
   "byOperation": [ { "operation": "CHAT", "requests": 30, "totalTokens": 55210 },
                    { "operation": "EMBEDDING", "requests": 12, "totalTokens": 2750 } ],
-  "byModel":     [ { "provider": "xai", "model": "grok-3-mini", "requests": 30, "totalTokens": 55210 } ],
+  "byModel":     [ { "provider": "groq",  "model": "llama-3.3-70b-versatile", "operation": "CHAT",      "requests": 30, "totalTokens": 55210 },
+                   { "provider": "local", "model": "deterministic-1536",      "operation": "EMBEDDING", "requests": 12, "totalTokens": 2750 } ],
   "firstUsedAt": "…", "lastUsedAt": "…" }
 ```
 

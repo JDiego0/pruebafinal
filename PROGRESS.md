@@ -3,8 +3,10 @@
 Living state of the project. Updated at the end of every phase.
 Plan: `docs/BACKLOG.md` · Acceptance: `REQUIREMENTS.md` · Rationale: `DECISIONS.md`
 
-**Current phase:** 0 — complete. Awaiting explicit go-ahead to begin Phase 1.
+**Current phase:** 0 — complete, amended for the Groq provider correction. Ready to begin Phase 1.
 **Last updated:** 2026-08-27
+
+> **Amendment (2026-08-27).** MVP chat provider is **Groq**, not xAI/Grok. Groq is OpenAI-compatible, so the adapter is unchanged — but Groq publishes **no embedding models**, so chat and embeddings are now configured as two independent providers. Recorded as `DECISIONS.md` D-21 and requirement `AI-16`. No change to the schema, the RLS model, the retrieval order or any security property.
 
 ---
 
@@ -69,7 +71,8 @@ Targets: Java 21, Spring Boot 3.3, PostgreSQL 16 + pgvector, React 19 + Vite.
 | id | Blocking? | Item |
 |----|-----------|------|
 | HUMAN-01 | No — only Supabase deployment | Supabase project URL, database password, connection string |
-| HUMAN-02 | No — only AI answer quality | AI provider API key + base URL + model (`AI_API_KEY`, `AI_BASE_URL`, `AI_MODEL`) |
+| HUMAN-02 | No — only AI answer quality | **Groq** API key (`AI_API_KEY`; base URL and model pre-filled) |
+| HUMAN-02b | No — only retrieval relevance | Embedding provider base URL + model + key (`EMBEDDING_*`). Defaults to the offline local provider; Groq has no embeddings |
 | HUMAN-03 | No — only when pushing | GitHub repository URL and push authorization |
 | HUMAN-04 | No — generated locally for dev | Production `JWT_SECRET` (256-bit) |
 
@@ -88,6 +91,7 @@ None blocks Phase 1 through 13 locally. Details in `README.md` § Human actions.
 | R5 | Assessment expects Supabase; Compose must run offline | Portable SQL, local Postgres primary, Supabase as documented deployment target (D-04) |
 | R6 | Scope breadth vs. token budget | Vertical MVP first; cuts recorded in `DECISIONS.md` §D-20 and surfaced in `FINAL_AUDIT.md` |
 | R7 | `rw_migrator` holds `BYPASSRLS` | Migration-only, separate credentials, container exits, asserted by `TEST-07` (D-07) |
+| R8 | Groq offers no embeddings, so RAG depends on a second provider | Deterministic local provider is the default and needs no credentials; the 1536-dimension contract is validated at startup (D-21) |
 
 ---
 
