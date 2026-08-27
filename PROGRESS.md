@@ -3,7 +3,7 @@
 Living state of the project. Updated at the end of every phase.
 Plan: `docs/BACKLOG.md` · Acceptance: `REQUIREMENTS.md` · Rationale: `DECISIONS.md`
 
-**Current phase:** 0 — complete, amended for the Groq provider correction. Ready to begin Phase 1.
+**Current phase:** 1 — complete. Beginning Phase 2 (PostgreSQL schema).
 **Last updated:** 2026-08-27
 
 > **Amendment (2026-08-27).** MVP chat provider is **Groq**, not xAI/Grok. Groq is OpenAI-compatible, so the adapter is unchanged — but Groq publishes **no embedding models**, so chat and embeddings are now configured as two independent providers. Recorded as `DECISIONS.md` D-21 and requirement `AI-16`. No change to the schema, the RLS model, the retrieval order or any security property.
@@ -15,8 +15,8 @@ Plan: `docs/BACKLOG.md` · Acceptance: `REQUIREMENTS.md` · Rationale: `DECISION
 | Phase | Name | Status | Notes |
 |-------|------|--------|-------|
 | 0 | Initialization | ✅ done | Requirements, architecture, ER + 3NF, security model, API contract, backlog |
-| 1 | Business corpus, seed, ER render | ⏸ not started | |
-| 2 | PostgreSQL schema | ⏸ not started | |
+| 1 | Business corpus, seed, ER render | ✅ done | seed.json validated, ER embedded in DATA_MODEL.md; standalone SVG blocked locally (see note) |
+| 2 | PostgreSQL schema | 🔄 in progress | |
 | 3 | Functions, procedures, views, triggers, RLS | ⏸ not started | Opus — security critical |
 | 4 | Authentication | ⏸ not started | |
 | 5 | Messaging REST API | ⏸ not started | |
@@ -48,6 +48,37 @@ docs/diagrams/er.mmd     ER source
 ```
 
 Directory skeleton created for `database/`, `backend/`, `frontend/`, `docs/`.
+
+---
+
+## Delivered in Phase 1
+
+```
+database/seeds/seed.schema.json   JSON Schema validating seed.json's shape
+database/seeds/seed.json          business corpus (model) + loadable data
+```
+
+Data: 2 roles, 3 channel types, 3 member roles, 2 AI providers (`groq` chat,
+`local` embeddings) + 1 embedding model, 8 users (mixed es/en locale, 2
+ADMIN), 6 channels (2 public, 2 private, 2 direct), 23 memberships, 46
+messages, 1 active system prompt (v2026.08.1).
+
+Negative fixtures verified programmatically (`node` referential-integrity +
+fixture check, all assertions passed):
+- **TEST-05 fixture** — the term `kryptonite` appears only inside the
+  `incident-response` private channel (5 of 8 users are non-members).
+- **TEST-04 fixture** — `proyecto-atlas` (public) and `incident-response`
+  (private) each contain a message about "the Thursday 10am demo",
+  semantically close but in channels with disjoint membership, so retrieval
+  isolation is provable once Phase 9/10 wire up the RAG pipeline and tests.
+
+**Known local-environment limitation:** `docs/diagrams/er.svg` was not
+generated — `mermaid-cli`'s headless Chrome fails to launch on this machine
+(`STATUS_DLL_NOT_FOUND`, a missing Windows runtime dependency unrelated to
+the project). Not a scope gap: the same Mermaid source (`docs/diagrams/er.mmd`)
+is already embedded as a live diagram in `docs/DATA_MODEL.md` §2, which
+GitHub/GitLab render natively. Revisit only if a reviewer specifically needs
+a standalone image file.
 
 ---
 
@@ -97,4 +128,4 @@ None blocks Phase 1 through 13 locally. Details in `README.md` § Human actions.
 
 ## Next action
 
-Begin **Phase 1** — `seed.schema.json`, the `seed.json` business corpus and data block (including the deliberate negative fixtures for `TEST-04`/`TEST-05`), and the rendered ER diagram.
+Begin **Phase 2** — Flyway migrations: extensions and roles, the 20-table schema, indexes, and the generated `tsvector` column (`docs/BACKLOG.md` Phase 2).

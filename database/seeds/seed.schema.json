@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://riwi.co/schemas/seed.schema.json",
+  "title": "Riwi Messaging Platform seed and business corpus",
+  "description": "Validates database/seeds/seed.json. The 'model' block is the business corpus (MOD-04); the 'data' block is loaded verbatim by the seed runner.",
+  "type": "object",
+  "required": ["meta", "model", "data"],
+  "additionalProperties": false,
+  "properties": {
+    "meta": {
+      "type": "object",
+      "required": ["database", "schema", "version", "generated_for"],
+      "additionalProperties": false,
+      "properties": {
+        "database": { "type": "string", "const": "bd_juandiego_garcia_nakamoto" },
+        "schema": { "type": "string", "const": "rw" },
+        "version": { "type": "string" },
+        "generated_for": { "type": "string" }
+      }
+    },
+    "model": {
+      "type": "object",
+      "required": ["entities", "relationships", "business_rules", "implicit_business_rules", "normalization"],
+      "additionalProperties": false,
+      "properties": {
+        "entities": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "purpose", "attributes", "primary_key"],
+            "additionalProperties": false,
+            "properties": {
+              "name": { "type": "string", "pattern": "^rw_[a-z_]+$" },
+              "purpose": { "type": "string" },
+              "attributes": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["name", "type", "constraints"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": { "type": "string" },
+                    "type": { "type": "string" },
+                    "constraints": { "type": "string" }
+                  }
+                }
+              },
+              "primary_key": { "type": "string" },
+              "foreign_keys": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["column", "references", "on_delete"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "column": { "type": "string" },
+                    "references": { "type": "string" },
+                    "on_delete": { "type": "string", "enum": ["CASCADE", "RESTRICT", "SET NULL"] }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "relationships": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["from", "to", "cardinality", "optionality", "on_delete"],
+            "additionalProperties": false,
+            "properties": {
+              "from": { "type": "string" },
+              "to": { "type": "string" },
+              "cardinality": { "type": "string", "enum": ["1:1", "1:N", "M:N"] },
+              "optionality": { "type": "string" },
+              "on_delete": { "type": "string" }
+            }
+          }
+        },
+        "business_rules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "statement", "enforced_by"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string", "pattern": "^BR-[0-9]+$" },
+              "statement": { "type": "string" },
+              "enforced_by": { "type": "string" }
+            }
+          }
+        },
+        "implicit_business_rules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "statement", "rationale"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string", "pattern": "^IBR-[0-9]+$" },
+              "statement": { "type": "string" },
+              "rationale": { "type": "string" }
+            }
+          }
+        },
+        "normalization": {
+          "type": "object",
+          "required": ["first_normal_form", "second_normal_form", "third_normal_form"],
+          "additionalProperties": false,
+          "properties": {
+            "first_normal_form": { "type": "string" },
+            "second_normal_form": { "type": "string" },
+            "third_normal_form": { "type": "string" }
+          }
+        }
+      }
+    },
+    "data": {
+      "type": "object",
+      "description": "Loaded in this key order (matches FK dependency order). Each value is an array of row objects whose keys are rw_ column names.",
+      "required": [
+        "rw_roles", "rw_channel_types", "rw_channel_member_roles",
+        "rw_ai_providers", "rw_embedding_models",
+        "rw_users", "rw_user_credentials",
+        "rw_channels", "rw_channel_members", "rw_direct_channel_pairs",
+        "rw_messages", "rw_system_prompts"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "rw_roles": { "type": "array" },
+        "rw_channel_types": { "type": "array" },
+        "rw_channel_member_roles": { "type": "array" },
+        "rw_ai_providers": { "type": "array" },
+        "rw_embedding_models": { "type": "array" },
+        "rw_users": { "type": "array" },
+        "rw_user_credentials": { "type": "array" },
+        "rw_channels": { "type": "array" },
+        "rw_channel_members": { "type": "array" },
+        "rw_direct_channel_pairs": { "type": "array" },
+        "rw_messages": { "type": "array" },
+        "rw_system_prompts": { "type": "array" }
+      }
+    }
+  }
+}
